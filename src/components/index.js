@@ -6,3 +6,4 @@ export { default as DataTable } from "./DataTable";
 export { default as MissingTab } from "./MissingTab";
 export { default as ActiveTab } from "./ActiveTab";
 export { default as ExtraTab } from "./ExtraTab";
+export { default as NavBar } from "./NavBar";
