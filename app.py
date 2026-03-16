@@ -275,6 +275,52 @@ def normalize_url(url: str) -> str:
     return f"{parsed.scheme}://{host}{path}"
 
 
+# ─── Domain Finder ───
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_campaigns_by_domain(customer_id: str, login_customer_id: str, domain: str) -> pd.DataFrame:
+    """Fetch all search campaigns with ads pointing to a given domain."""
+    access_token = get_access_token()
+    cid = customer_id.replace("-", "")
+    query = """
+        SELECT
+            campaign.id,
+            campaign.name,
+            campaign.status,
+            ad_group.id,
+            ad_group.name,
+            ad_group_ad.ad.final_urls
+        FROM ad_group_ad
+        WHERE ad_group_ad.status = 'ENABLED'
+          AND campaign.advertising_channel_type = 'SEARCH'
+    """
+    results = ads_search(cid, query, access_token, login_customer_id)
+
+    target_domain = domain.strip().lower().replace("www.", "")
+    rows = []
+    for row in results:
+        campaign = row.get("campaign", {})
+        ad_group = row.get("adGroup", {})
+        ad_group_ad = row.get("adGroupAd", {})
+        ad = ad_group_ad.get("ad", {})
+        final_urls = ad.get("finalUrls", [])
+        for fu in final_urls:
+            parsed = urlparse(fu)
+            netloc = parsed.netloc.lower().replace("www.", "")
+            if netloc == target_domain:
+                rows.append({
+                    "campaign_id": str(campaign.get("id", "")),
+                    "campaign_name": campaign.get("name", ""),
+                    "campaign_status": campaign.get("status", ""),
+                    "ad_group_name": ad_group.get("name", ""),
+                    "final_url": fu,
+                })
+
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.drop_duplicates(subset=["campaign_id", "ad_group_name", "final_url"])
+    return df
+
+
 # ─── Sidebar: Configuration ───
 with st.sidebar:
     st.header("⚙️ Configuration")
@@ -496,3 +542,56 @@ if st.button("🔍 Run Reconciliation", type="primary", use_container_width=True
 
     # Store in session for re-renders
     st.session_state["last_run"] = True
+
+# ─── Domain Finder Section ───
+st.divider()
+st.header("🔎 Domain Finder")
+st.caption("Search all selected accounts for campaigns pointing to a specific domain")
+
+domain_input = st.text_input("Domain to search", placeholder="example.com")
+
+if st.button("🔎 Search Domain", type="primary", use_container_width=True):
+    if not domain_input:
+        st.error("Enter a domain name to search.")
+        st.stop()
+
+    all_domain_data = []
+    progress = st.progress(0, text="Searching accounts...")
+    for i, cid in enumerate(selected_ids):
+        account_name = selected_labels[i]
+        progress.progress(
+            (i + 1) / (len(selected_ids) + 1),
+            text=f"Searching: {account_name}...",
+        )
+        try:
+            df = fetch_campaigns_by_domain(cid, mcc_id, domain_input)
+            if not df.empty:
+                df["account_id"] = cid
+                df["account_name"] = account_name
+                all_domain_data.append(df)
+        except Exception as e:
+            st.warning(f"Error searching {account_name}: {str(e)[:200]}")
+
+    progress.progress(1.0, text="Done!")
+    progress.empty()
+
+    if all_domain_data:
+        domain_df = pd.concat(all_domain_data, ignore_index=True)
+        display_cols = ["account_name", "account_id", "campaign_name", "campaign_id", "campaign_status", "ad_group_name", "final_url"]
+        domain_df = domain_df[[c for c in display_cols if c in domain_df.columns]]
+
+        st.metric(f"Campaigns found for `{domain_input}`", len(domain_df))
+        st.dataframe(domain_df, use_container_width=True, hide_index=True)
+
+        csv_buf = io.BytesIO()
+        domain_df.to_csv(csv_buf, index=False)
+        csv_buf.seek(0)
+        st.download_button(
+            "⬇️ Download Domain Results CSV",
+            data=csv_buf,
+            file_name=f"domain_{domain_input.replace('.', '_')}_campaigns.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    else:
+        st.info(f"No campaigns found with final URLs pointing to `{domain_input}`.")
