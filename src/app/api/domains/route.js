@@ -8,25 +8,19 @@ export async function GET() {
   if (error) return error;
 
   try {
-    const { rows: domains } = await query(
-      `SELECT d.*,
-        COALESCE(
-          (SELECT json_agg(json_build_object(
-            'id', ds.id, 'sheet_type', ds.sheet_type,
-            'sheet_url', ds.sheet_url, 'worksheet_name', ds.worksheet_name,
-            'url_column', ds.url_column
-          )) FROM domain_sheets ds WHERE ds.domain_id = d.id),
-          '[]'::jsonb
-        ) AS sheets,
-        COALESCE(
-          (SELECT json_object_agg(s.setting_key, s.setting_value)
-           FROM domain_settings s WHERE s.domain_id = d.id),
-          '{}'::jsonb
-        ) AS settings
-       FROM domains d ORDER BY d.pinned DESC, d.domain_name ASC`
-    );
+    const { rows: domains } = await query("SELECT * FROM domains ORDER BY pinned DESC, domain_name ASC");
+    const { rows: sheets } = await query("SELECT * FROM domain_sheets");
+    const { rows: settings } = await query("SELECT * FROM domain_settings");
 
-    return NextResponse.json(domains);
+    const result = domains.map(d => ({
+      ...d,
+      sheets: sheets.filter(s => s.domain_id === d.id),
+      settings: settings
+        .filter(s => s.domain_id === d.id)
+        .reduce((acc, s) => ({ ...acc, [s.setting_key]: s.setting_value }), {}),
+    }));
+
+    return NextResponse.json(result);
   } catch (err) {
     console.error("[api/domains GET]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
