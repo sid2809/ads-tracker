@@ -3,3 +3,5 @@ google-ads==25.1.0
 gspread==6.1.4
 google-auth==2.38.0
 pandas==2.2.3
+grpcio==1.68.1
+grpcio-status==1.68.1
