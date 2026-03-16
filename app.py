@@ -213,6 +213,15 @@ def fetch_active_final_urls(customer_id: str, login_customer_id: str) -> pd.Data
 
     df = pd.DataFrame(rows)
     if not df.empty:
+        # Prefer keyword-level rows over ad-level rows for same campaign+url
+        keyword_rows = df[df["source"] == "keyword"]
+        ad_rows = df[df["source"] == "ad"]
+        if not keyword_rows.empty and not ad_rows.empty:
+            # Only keep ad rows for campaign+url combos not covered by keyword rows
+            keyword_keys = set(zip(keyword_rows["campaign_id"], keyword_rows["final_url"]))
+            ad_rows = ad_rows[~ad_rows.apply(lambda r: (r["campaign_id"], r["final_url"]) in keyword_keys, axis=1)]
+            df = pd.concat([keyword_rows, ad_rows], ignore_index=True)
+    if not df.empty:
         df["final_url_normalized"] = df["final_url"].apply(normalize_url)
     return df
 
