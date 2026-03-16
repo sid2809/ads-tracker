@@ -65,7 +65,7 @@ def ads_search(customer_id: str, query: str, access_token: str, login_customer_i
         "login-customer-id": login_customer_id.replace("-", ""),
         "Content-Type": "application/json",
     }
-    body = {"query": query, "pageSize": 10000}
+    body = {"query": query}
     resp = requests.post(url, headers=headers, json=body)
     if resp.status_code != 200:
         error_detail = resp.text[:1000]
