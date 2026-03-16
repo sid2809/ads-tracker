@@ -38,7 +38,7 @@ st.caption("Reconcile active campaigns against your master Google Sheet")
 
 
 # ─── Google Ads REST API Helpers ───
-ADS_API_VERSION = "v18"
+ADS_API_VERSION = "v17"
 ADS_BASE_URL = f"https://googleads.googleapis.com/{ADS_API_VERSION}"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
