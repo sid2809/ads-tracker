@@ -550,17 +550,29 @@ st.caption("Search all selected accounts for campaigns pointing to a specific do
 
 domain_input = st.text_input("Domain to search", placeholder="example.com")
 
+domain_account_options = {f"{a['name']} ({a['id']})": a["id"] for a in accounts}
+domain_selected_labels = st.multiselect(
+    "Select accounts to search",
+    options=list(domain_account_options.keys()),
+    default=[],
+    key="domain_finder_accounts",
+)
+domain_selected_ids = [domain_account_options[label] for label in domain_selected_labels]
+
 if st.button("🔎 Search Domain", type="primary", use_container_width=True):
     if not domain_input:
         st.error("Enter a domain name to search.")
         st.stop()
+    if not domain_selected_ids:
+        st.warning("Select at least one account to search.")
+        st.stop()
 
     all_domain_data = []
     progress = st.progress(0, text="Searching accounts...")
-    for i, cid in enumerate(selected_ids):
-        account_name = selected_labels[i]
+    for i, cid in enumerate(domain_selected_ids):
+        account_name = domain_selected_labels[i]
         progress.progress(
-            (i + 1) / (len(selected_ids) + 1),
+            (i + 1) / (len(domain_selected_ids) + 1),
             text=f"Searching: {account_name}...",
         )
         try:
