@@ -13,7 +13,7 @@ export default function DomainSearchPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then(data => setAccounts(Array.isArray(data) ? data : [])).catch(() => setAccounts([]));
+    fetch("/api/accounts").then((r) => r.json()).then(data => setAccounts(Array.isArray(data?.accounts) ? data.accounts : Array.isArray(data) ? data : [])).catch(() => setAccounts([]));
     fetch("/api/domains").then((r) => r.json()).then(data => setDomains(Array.isArray(data) ? data : [])).catch(() => setDomains([]));
   }, []);
 
