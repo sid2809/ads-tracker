@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials as SACredentials
-from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.errors import GoogleAdsException
+import requests
 import json
 import io
 import os
@@ -38,22 +37,55 @@ st.title("📊 Google Ads Campaign Tracker")
 st.caption("Reconcile active campaigns against your master Google Sheet")
 
 
-# ─── Config / Credentials ───
-def get_google_ads_client():
-    """Build GoogleAdsClient from env vars or secrets."""
-    config = {
-        "developer_token": os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+# ─── Google Ads REST API Helpers ───
+ADS_API_VERSION = "v23"
+ADS_BASE_URL = f"https://googleads.googleapis.com/{ADS_API_VERSION}"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+def get_access_token() -> str:
+    """Exchange refresh token for access token."""
+    resp = requests.post(TOKEN_URL, data={
+        "grant_type": "refresh_token",
         "client_id": os.environ.get("GOOGLE_ADS_CLIENT_ID", ""),
         "client_secret": os.environ.get("GOOGLE_ADS_CLIENT_SECRET", ""),
         "refresh_token": os.environ.get("GOOGLE_ADS_REFRESH_TOKEN", ""),
-        "login_customer_id": os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", ""),
-        "use_proto_plus": True,
+    })
+    resp.raise_for_status()
+    return resp.json()["access_token"]
+
+
+def ads_search(customer_id: str, query: str, access_token: str, login_customer_id: str) -> list[dict]:
+    """Execute a GAQL query via Google Ads REST search endpoint."""
+    cid = customer_id.replace("-", "")
+    url = f"{ADS_BASE_URL}/customers/{cid}/googleAds:search"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "developer-token": os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
+        "login-customer-id": login_customer_id.replace("-", ""),
+        "Content-Type": "application/json",
     }
-    # Strip hyphens from login_customer_id
-    config["login_customer_id"] = config["login_customer_id"].replace("-", "")
-    return GoogleAdsClient.load_from_dict(config)
+    body = {"query": query, "pageSize": 10000}
+    resp = requests.post(url, headers=headers, json=body)
+    if resp.status_code != 200:
+        error_detail = resp.text[:1000]
+        raise Exception(f"{resp.status_code} Error: {error_detail}")
+
+    data = resp.json()
+    results = data.get("results", [])
+    # Handle pagination
+    while data.get("nextPageToken"):
+        body["pageToken"] = data["nextPageToken"]
+        resp = requests.post(url, headers=headers, json=body)
+        if resp.status_code != 200:
+            error_detail = resp.text[:1000]
+            raise Exception(f"{resp.status_code} Error: {error_detail}")
+        data = resp.json()
+        results.extend(data.get("results", []))
+    return results
 
 
+# ─── Google Sheets ───
 def get_gspread_client():
     """Build gspread client from service account JSON env var."""
     sa_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
@@ -68,13 +100,11 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 
-# ─── Google Ads Functions ───
+# ─── Google Ads Data Functions ───
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_child_accounts(login_customer_id: str) -> list[dict]:
     """Fetch all accessible child accounts under MCC."""
-    client = get_google_ads_client()
-    service = client.get_service("GoogleAdsService")
-
+    access_token = get_access_token()
     query = """
         SELECT
             customer_client.id,
@@ -85,29 +115,24 @@ def fetch_child_accounts(login_customer_id: str) -> list[dict]:
         WHERE customer_client.manager = false
           AND customer_client.status = 'ENABLED'
     """
-    cid = login_customer_id.replace("-", "")
-    results = service.search(customer_id=cid, query=query)
+    results = ads_search(login_customer_id, query, access_token, login_customer_id)
 
     accounts = []
     for row in results:
-        cc = row.customer_client
+        cc = row.get("customerClient", {})
         accounts.append({
-            "id": str(cc.id),
-            "name": cc.descriptive_name or f"Account {cc.id}",
+            "id": str(cc.get("id", "")),
+            "name": cc.get("descriptiveName", "") or f"Account {cc.get('id', '')}",
         })
     return sorted(accounts, key=lambda a: a["name"])
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_active_final_urls(customer_id: str) -> pd.DataFrame:
-    """
-    Pull final URLs from ENABLED search campaigns.
-    We query at the ad_group_criterion (keyword) level to get keyword + final URL,
-    and also at the ad_group_ad level for ad-level final URLs.
-    """
-    client = get_google_ads_client()
-    service = client.get_service("GoogleAdsService")
+def fetch_active_final_urls(customer_id: str, login_customer_id: str) -> pd.DataFrame:
+    """Pull final URLs from ENABLED search campaigns via REST API."""
+    access_token = get_access_token()
     cid = customer_id.replace("-", "")
+    rows = []
 
     # ── Query 1: Keyword-level final URLs ──
     keyword_query = """
@@ -127,25 +152,27 @@ def fetch_active_final_urls(customer_id: str) -> pd.DataFrame:
           AND ad_group_criterion.status = 'ENABLED'
           AND campaign.advertising_channel_type = 'SEARCH'
     """
-
-    rows = []
     try:
-        results = service.search(customer_id=cid, query=keyword_query)
+        results = ads_search(cid, keyword_query, access_token, login_customer_id)
         for row in results:
-            final_urls = list(row.ad_group_criterion.final_urls)
+            campaign = row.get("campaign", {})
+            ad_group = row.get("adGroup", {})
+            criterion = row.get("adGroupCriterion", {})
+            keyword = criterion.get("keyword", {})
+            final_urls = criterion.get("finalUrls", [])
             url = final_urls[0] if final_urls else ""
             rows.append({
-                "campaign_id": str(row.campaign.id),
-                "campaign_name": row.campaign.name,
-                "ad_group_id": str(row.ad_group.id),
-                "ad_group_name": row.ad_group.name,
-                "keyword": row.ad_group_criterion.keyword.text,
-                "match_type": row.ad_group_criterion.keyword.match_type.name,
+                "campaign_id": str(campaign.get("id", "")),
+                "campaign_name": campaign.get("name", ""),
+                "ad_group_id": str(ad_group.get("id", "")),
+                "ad_group_name": ad_group.get("name", ""),
+                "keyword": keyword.get("text", ""),
+                "match_type": keyword.get("matchType", ""),
                 "final_url": url,
                 "source": "keyword",
             })
-    except GoogleAdsException as ex:
-        st.error(f"Google Ads API error: {ex.failure.errors[0].message}")
+    except Exception as e:
+        st.error(f"Keyword query error for {cid}: {str(e)[:500]}")
         return pd.DataFrame()
 
     # ── Query 2: Ad-level final URLs (fallback) ──
@@ -162,23 +189,26 @@ def fetch_active_final_urls(customer_id: str) -> pd.DataFrame:
           AND ad_group_ad.status = 'ENABLED'
           AND campaign.advertising_channel_type = 'SEARCH'
     """
-
     try:
-        results = service.search(customer_id=cid, query=ad_query)
+        results = ads_search(cid, ad_query, access_token, login_customer_id)
         for row in results:
-            final_urls = list(row.ad_group_ad.ad.final_urls)
+            campaign = row.get("campaign", {})
+            ad_group = row.get("adGroup", {})
+            ad_group_ad = row.get("adGroupAd", {})
+            ad = ad_group_ad.get("ad", {})
+            final_urls = ad.get("finalUrls", [])
             url = final_urls[0] if final_urls else ""
             rows.append({
-                "campaign_id": str(row.campaign.id),
-                "campaign_name": row.campaign.name,
-                "ad_group_id": str(row.ad_group.id),
-                "ad_group_name": row.ad_group.name,
+                "campaign_id": str(campaign.get("id", "")),
+                "campaign_name": campaign.get("name", ""),
+                "ad_group_id": str(ad_group.get("id", "")),
+                "ad_group_name": ad_group.get("name", ""),
                 "keyword": "",
                 "match_type": "",
                 "final_url": url,
                 "source": "ad",
             })
-    except GoogleAdsException:
+    except Exception:
         pass  # keyword-level data is primary
 
     df = pd.DataFrame(rows)
@@ -284,7 +314,7 @@ if st.button("🔍 Run Reconciliation", type="primary", use_container_width=True
             (i + 1) / (len(selected_ids) + 1),
             text=f"Fetching: {account_name}...",
         )
-        df = fetch_active_final_urls(cid)
+        df = fetch_active_final_urls(cid, mcc_id)
         if not df.empty:
             df["account_id"] = cid
             df["account_name"] = account_name
