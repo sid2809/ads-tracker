@@ -17,12 +17,12 @@ export async function GET(request, { params }) {
             'sheet_url', ds.sheet_url, 'worksheet_name', ds.worksheet_name,
             'url_column', ds.url_column
           )) FROM domain_sheets ds WHERE ds.domain_id = d.id),
-          '[]'
+          '[]'::jsonb
         ) AS sheets,
         COALESCE(
           (SELECT json_object_agg(s.setting_key, s.setting_value)
            FROM domain_settings s WHERE s.domain_id = d.id),
-          '{}'
+          '{}'::jsonb
         ) AS settings
        FROM domains d WHERE d.id = $1`,
       [id]

@@ -16,12 +16,12 @@ export async function GET() {
             'sheet_url', ds.sheet_url, 'worksheet_name', ds.worksheet_name,
             'url_column', ds.url_column
           )) FROM domain_sheets ds WHERE ds.domain_id = d.id),
-          '[]'
+          '[]'::jsonb
         ) AS sheets,
         COALESCE(
           (SELECT json_object_agg(s.setting_key, s.setting_value)
            FROM domain_settings s WHERE s.domain_id = d.id),
-          '{}'
+          '{}'::jsonb
         ) AS settings
        FROM domains d ORDER BY d.pinned DESC, d.domain_name ASC`
     );
