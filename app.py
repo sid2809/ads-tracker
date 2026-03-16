@@ -51,7 +51,7 @@ def get_google_ads_client():
     }
     # Strip hyphens from login_customer_id
     config["login_customer_id"] = config["login_customer_id"].replace("-", "")
-    return GoogleAdsClient.load_from_dict(config)
+    return GoogleAdsClient.load_from_dict(config, http_option={"api_endpoint": "https://googleads.googleapis.com"})
 
 
 def get_gspread_client():
