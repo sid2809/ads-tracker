@@ -1,232 +1,129 @@
 "use client";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import NavBar from "@/components/NavBar";
+import DomainCard from "@/components/DomainCard";
+import AddDomainModal from "@/components/AddDomainModal";
 
-import { useState, useEffect } from "react";
-import {
-  StatCard,
-  TabButton,
-  ConfigPanel,
-  AccountSelector,
-  MissingTab,
-  ActiveTab,
-  ExtraTab,
-} from "@/components";
+export default function DashboardPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [domains, setDomains] = useState([]);
+  const [statsMap, setStatsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
 
-export default function Home() {
-  // ─── Config State ───
-  const [sheetUrl, setSheetUrl] = useState("");
-  const [worksheetName, setWorksheetName] = useState("");
-  const [urlColumn, setUrlColumn] = useState("Final_URL");
-
-  // ─── Accounts State ───
-  const [accounts, setAccounts] = useState([]);
-  const [selectedAccounts, setSelectedAccounts] = useState(new Set());
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  const [accountsError, setAccountsError] = useState(null);
-
-  // ─── Results State ───
-  const [results, setResults] = useState(null);
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState(null);
-
-  // ─── UI State ───
-  const [activeTab, setActiveTab] = useState("missing");
-  const [selectedMissing, setSelectedMissing] = useState(new Set());
-
-  // ─── Load Accounts on Mount ───
-  useEffect(() => {
-    fetch("/api/accounts")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) throw new Error(data.error);
-        setAccounts(data.accounts || []);
-        setSelectedAccounts(new Set((data.accounts || []).map((a) => a.id)));
-      })
-      .catch((err) => setAccountsError(err.message))
-      .finally(() => setAccountsLoading(false));
+  const fetchDomains = useCallback(async () => {
+    try {
+      const res = await fetch("/api/domains");
+      if (res.ok) {
+        const data = await res.json();
+        setDomains(data);
+        // Fetch cached stats for pinned domains
+        const pinned = data.filter((d) => d.pinned);
+        const statResults = await Promise.all(
+          pinned.map(async (d) => {
+            try {
+              const r = await fetch(`/api/domains/${d.id}/stats`);
+              const s = await r.json();
+              return [d.id, s];
+            } catch {
+              return [d.id, { data: null }];
+            }
+          })
+        );
+        const map = {};
+        for (const [id, s] of statResults) {
+          map[id] = s;
+        }
+        setStatsMap(map);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // ─── Select All Missing When Results Change ───
   useEffect(() => {
-    if (results?.missing) {
-      setSelectedMissing(new Set(results.missing.map((_, i) => i)));
-    }
-  }, [results]);
+    if (!authLoading && user) fetchDomains();
+  }, [authLoading, user, fetchDomains]);
 
-  // ─── Account Selection Handlers ───
-  const toggleAccount = (id) => {
-    setSelectedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  if (authLoading) return null;
 
-  const toggleAllAccounts = () => {
-    if (selectedAccounts.size === accounts.length) {
-      setSelectedAccounts(new Set());
-    } else {
-      setSelectedAccounts(new Set(accounts.map((a) => a.id)));
-    }
-  };
+  const isAdmin = user?.role === "admin";
+  const pinnedDomains = domains.filter((d) => d.pinned);
 
-  // ─── Missing Row Selection Handlers ───
-  const toggleMissingRow = (idx) => {
-    setSelectedMissing((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  };
-
-  const toggleAllMissing = () => {
-    if (!results?.missing) return;
-    if (selectedMissing.size === results.missing.length) {
-      setSelectedMissing(new Set());
-    } else {
-      setSelectedMissing(new Set(results.missing.map((_, i) => i)));
-    }
-  };
-
-  // ─── Run Reconciliation ───
-  const runReconciliation = async () => {
-    if (!sheetUrl) return setRunError("Enter a Google Sheet URL");
-    if (selectedAccounts.size === 0) return setRunError("Select at least one account");
-
-    setRunning(true);
-    setRunError(null);
-    setResults(null);
-
-    try {
-      const res = await fetch("/api/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountIds: Array.from(selectedAccounts),
-          sheetUrl,
-          worksheetName: worksheetName || undefined,
-          urlColumn: urlColumn || "Final URL",
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setResults(data);
-      setActiveTab("missing");
-    } catch (err) {
-      setRunError(err.message);
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  // ─── Render ───
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-surface-900 tracking-tight">
-          Campaign Tracker
-        </h1>
-        <p className="text-surface-700 mt-1">
-          Reconcile active Google Ads campaigns against your master sheet
-        </p>
-      </div>
+    <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
+      <NavBar user={user} domains={domains} onDomainsChange={fetchDomains} />
 
-      {/* Config */}
-      <ConfigPanel
-        sheetUrl={sheetUrl}
-        setSheetUrl={setSheetUrl}
-        worksheetName={worksheetName}
-        setWorksheetName={setWorksheetName}
-        urlColumn={urlColumn}
-        setUrlColumn={setUrlColumn}
-      />
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+        {/* Page header */}
+        <div style={{ marginBottom: 32 }}>
+          <h1 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 500, marginBottom: 4 }}>
+            Dashboard
+          </h1>
+          <p style={{ color: "var(--text-tertiary)", fontSize: 13 }}>
+            {pinnedDomains.length > 0
+              ? `${pinnedDomains.length} pinned domain${pinnedDomains.length !== 1 ? "s" : ""}`
+              : "Pin a domain to see it here"}
+          </p>
+        </div>
 
-      {/* Accounts */}
-      <AccountSelector
-        accounts={accounts}
-        selectedAccounts={selectedAccounts}
-        onToggle={toggleAccount}
-        onToggleAll={toggleAllAccounts}
-        loading={accountsLoading}
-        error={accountsError}
-      />
-
-      {/* Run Button */}
-      <button
-        onClick={runReconciliation}
-        disabled={running || accountsLoading}
-        className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-surface-300 text-white font-semibold text-sm transition shadow-sm shadow-blue-200 disabled:shadow-none mb-6"
-      >
-        {running ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Running reconciliation...
-          </span>
+        {loading ? (
+          <div style={{ display: "flex", justifyContent: "center", padding: 64 }}>
+            <span className="spinner" />
+          </div>
+        ) : pinnedDomains.length === 0 ? (
+          /* Empty state */
+          <div style={{
+            textAlign: "center",
+            padding: "80px 24px",
+            border: "1px dashed var(--border-primary)",
+            borderRadius: 12,
+          }}>
+            <p style={{ color: "var(--text-tertiary)", fontSize: 14, marginBottom: 16 }}>
+              No pinned domains yet
+            </p>
+            <p style={{ color: "var(--text-tertiary)", fontSize: 12, marginBottom: 24, maxWidth: 340, margin: "0 auto 24px" }}>
+              Add a domain and pin it to your dashboard to see stats at a glance.
+            </p>
+            {isAdmin && (
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowAddModal(true)}
+              >
+                + Add Domain
+              </button>
+            )}
+          </div>
         ) : (
-          "Run Reconciliation"
+          /* Domain card grid */
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+            gap: 16,
+          }}>
+            {pinnedDomains.map((d) => (
+              <DomainCard
+                key={d.id}
+                domain={d}
+                stats={statsMap[d.id]?.data}
+                updatedAt={statsMap[d.id]?.updated_at}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </div>
         )}
-      </button>
+      </main>
 
-      {/* Error */}
-      {runError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-4 text-sm mb-6 fade-in">
-          {runError}
-        </div>
-      )}
-
-      {/* Results */}
-      {results && (
-        <div className="fade-in">
-          {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger">
-            <StatCard label="Sheet URLs" value={results.stats.sheetUrls} color="blue" />
-            <StatCard label="Active" value={results.stats.active} color="green" />
-            <StatCard label="Missing" value={results.stats.missing} color="red" />
-            <StatCard label="Extra" value={results.stats.extra} color="amber" />
-          </div>
-
-          {/* Tabs */}
-          <div className="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden">
-            <div className="flex border-b border-surface-200 bg-surface-50">
-              <TabButton
-                active={activeTab === "missing"}
-                label="Missing"
-                count={results.stats.missing}
-                color="red"
-                onClick={() => setActiveTab("missing")}
-              />
-              <TabButton
-                active={activeTab === "active"}
-                label="Active"
-                count={results.stats.active}
-                color="green"
-                onClick={() => setActiveTab("active")}
-              />
-              <TabButton
-                active={activeTab === "extra"}
-                label="Extra"
-                count={results.stats.extra}
-                color="amber"
-                onClick={() => setActiveTab("extra")}
-              />
-            </div>
-
-            <div className="p-5">
-              {activeTab === "missing" && (
-                <MissingTab
-                  rows={results.missing}
-                  selectedRows={selectedMissing}
-                  onToggleRow={toggleMissingRow}
-                  onToggleAll={toggleAllMissing}
-                />
-              )}
-              {activeTab === "active" && <ActiveTab rows={results.active} />}
-              {activeTab === "extra" && <ExtraTab rows={results.extra} />}
-            </div>
-          </div>
-        </div>
+      {showAddModal && (
+        <AddDomainModal
+          onClose={() => {
+            setShowAddModal(false);
+            fetchDomains();
+          }}
+        />
       )}
     </div>
   );

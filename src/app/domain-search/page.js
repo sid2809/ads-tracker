@@ -1,197 +1,142 @@
 "use client";
-
 import { useState, useEffect } from "react";
-import { AccountSelector, DataTable } from "@/components";
-import { downloadCsv } from "@/lib/csv";
+import { useAuth } from "@/components/AuthProvider";
+import NavBar from "@/components/NavBar";
 
 export default function DomainSearchPage() {
-  // ─── Accounts State ───
+  const { user, loading: authLoading } = useAuth();
+  const [domains, setDomains] = useState([]);
   const [accounts, setAccounts] = useState([]);
-  const [selectedAccounts, setSelectedAccounts] = useState(new Set());
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  const [accountsError, setAccountsError] = useState(null);
-
-  // ─── Search State ───
-  const [domain, setDomain] = useState("");
+  const [selectedAccounts, setSelectedAccounts] = useState([]);
+  const [searchDomain, setSearchDomain] = useState("");
   const [results, setResults] = useState(null);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // ─── Load Accounts on Mount ───
   useEffect(() => {
-    fetch("/api/accounts")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) throw new Error(data.error);
-        setAccounts(data.accounts || []);
-      })
-      .catch((err) => setAccountsError(err.message))
-      .finally(() => setAccountsLoading(false));
+    fetch("/api/accounts").then((r) => r.json()).then(setAccounts).catch(() => {});
+    fetch("/api/domains").then((r) => r.json()).then(setDomains).catch(() => {});
   }, []);
 
-  // ─── Account Selection Handlers ───
-  const toggleAccount = (id) => {
-    setSelectedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAllAccounts = () => {
-    if (selectedAccounts.size === accounts.length) {
-      setSelectedAccounts(new Set());
-    } else {
-      setSelectedAccounts(new Set(accounts.map((a) => a.id)));
-    }
-  };
-
-  // ─── Search ───
-  const runSearch = async () => {
-    if (!domain.trim()) return setSearchError("Enter a domain name");
-    if (selectedAccounts.size === 0)
-      return setSearchError("Select at least one account");
-
-    setSearching(true);
-    setSearchError(null);
-    setResults(null);
-
+  async function runSearch() {
+    if (!searchDomain || selectedAccounts.length === 0) return;
+    setLoading(true);
     try {
       const res = await fetch("/api/domain-search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountIds: Array.from(selectedAccounts),
-          domain: domain.trim(),
-        }),
+        body: JSON.stringify({ domain: searchDomain, accountIds: selectedAccounts }),
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setResults(data);
-    } catch (err) {
-      setSearchError(err.message);
+      if (res.ok) setResults(data);
+    } catch {
+      // ignore
     } finally {
-      setSearching(false);
+      setLoading(false);
     }
-  };
+  }
 
-  // ─── CSV Download ───
-  const handleDownload = () => {
-    if (!results?.results?.length) return;
-    downloadCsv(results.results, columns, `domain_${domain.replace(/\./g, "_")}_campaigns.csv`);
-  };
+  if (authLoading) return null;
+  if (user?.role !== "admin") {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
+        <NavBar user={user} domains={domains} />
+        <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+          <p style={{ color: "var(--text-tertiary)" }}>Admin access required</p>
+        </main>
+      </div>
+    );
+  }
 
-  const columns = [
-    "campaignName",
-    "campaignStatus",
-    "adGroupName",
-    "finalUrl",
-  ];
-
-  const columnLabels = {
-    campaignName: "Campaign",
-    campaignStatus: "Status",
-    adGroupName: "Ad Group",
-    finalUrl: "Final URL",
-  };
-
-  // ─── Render ───
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-surface-900 tracking-tight">
+    <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
+      <NavBar user={user} domains={domains} />
+
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px" }}>
+        <h1 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 500, marginBottom: 24 }}>
           Domain Search
         </h1>
-        <p className="text-surface-700 mt-1">
-          Find all campaigns pointing to a specific domain across your accounts
-        </p>
-      </div>
 
-      {/* Domain Input */}
-      <div className="bg-white rounded-xl border border-surface-200 shadow-sm p-5 mb-5">
-        <label className="block text-xs font-semibold text-surface-700 uppercase tracking-wider mb-2">
-          Domain
-        </label>
-        <input
-          type="text"
-          value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          placeholder="example.com"
-          className="w-full px-4 py-2.5 rounded-lg border border-surface-200 bg-surface-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 transition"
-          onKeyDown={(e) => e.key === "Enter" && runSearch()}
-        />
-      </div>
-
-      {/* Accounts */}
-      <AccountSelector
-        accounts={accounts}
-        selectedAccounts={selectedAccounts}
-        onToggle={toggleAccount}
-        onToggleAll={toggleAllAccounts}
-        loading={accountsLoading}
-        error={accountsError}
-      />
-
-      {/* Search Button */}
-      <button
-        onClick={runSearch}
-        disabled={searching || accountsLoading}
-        className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-surface-300 text-white font-semibold text-sm transition shadow-sm shadow-blue-200 disabled:shadow-none mb-6"
-      >
-        {searching ? (
-          <span className="flex items-center justify-center gap-2">
-            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Searching...
-          </span>
-        ) : (
-          "Search Domain"
-        )}
-      </button>
-
-      {/* Error */}
-      {searchError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-5 py-4 text-sm mb-6 fade-in">
-          {searchError}
-        </div>
-      )}
-
-      {/* Results */}
-      {results && (
-        <div className="fade-in">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-surface-700">
-              {results.totalCampaigns} campaign{results.totalCampaigns !== 1 ? "s" : ""} found
-              for <span className="text-blue-600">{domain}</span>
-            </p>
-            {results.results.length > 0 && (
-              <button
-                onClick={handleDownload}
-                className="px-4 py-2 rounded-lg bg-surface-100 hover:bg-surface-200 text-surface-700 text-sm font-medium transition"
-              >
-                Download CSV
-              </button>
-            )}
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Domain</label>
+              <input
+                value={searchDomain}
+                onChange={(e) => setSearchDomain(e.target.value)}
+                placeholder="example.com"
+                style={{ width: "100%", fontFamily: "'JetBrains Mono', monospace" }}
+              />
+            </div>
           </div>
 
-          {results.results.length > 0 ? (
-            <div className="bg-white rounded-xl border border-surface-200 shadow-sm overflow-hidden">
-              <div className="p-5">
-                <DataTable
-                  rows={results.results}
-                  columns={columns}
-                  columnLabels={columnLabels}
-                />
-              </div>
+          {/* Account selector */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>Ad Accounts</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {accounts.map((acc) => (
+                <label key={acc.id} style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "4px 10px", borderRadius: 6,
+                  border: "1px solid var(--border-primary)",
+                  fontSize: 12, cursor: "pointer",
+                  background: selectedAccounts.includes(acc.id) ? "var(--bg-tertiary)" : "transparent",
+                  color: "var(--text-secondary)",
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedAccounts.includes(acc.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]);
+                      else setSelectedAccounts(selectedAccounts.filter((id) => id !== acc.id));
+                    }}
+                  />
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{acc.name || acc.id}</span>
+                </label>
+              ))}
             </div>
-          ) : (
-            <div className="bg-surface-50 border border-surface-200 rounded-xl px-5 py-8 text-center text-sm text-surface-600">
-              No campaigns found with final URLs pointing to {domain}
-            </div>
-          )}
+          </div>
+
+          <button
+            className="btn btn-primary"
+            onClick={runSearch}
+            disabled={loading || !searchDomain || selectedAccounts.length === 0}
+          >
+            {loading ? <><span className="spinner" /> Searching...</> : "Search"}
+          </button>
         </div>
-      )}
+
+        {/* Results */}
+        {results && Array.isArray(results) && results.length > 0 && (
+          <div className="card fade-in" style={{ maxHeight: 600, overflow: "auto" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
+                  <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>Campaign</th>
+                  <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>Ad Group</th>
+                  <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>Keywords</th>
+                  <th style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>Final URL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((row, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid var(--border-secondary)" }}>
+                    <td style={{ padding: "8px 12px", color: "var(--text-secondary)" }}>{row.campaignName}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-secondary)" }}>{row.adGroupName}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-secondary)", fontSize: 11 }}>{row.keywords}</td>
+                    <td style={{ padding: "8px 12px", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{row.finalUrl}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {results && Array.isArray(results) && results.length === 0 && (
+          <div className="card" style={{ textAlign: "center", padding: 32, color: "var(--text-tertiary)" }}>
+            No campaigns found for this domain
+          </div>
+        )}
+      </main>
     </div>
   );
 }
