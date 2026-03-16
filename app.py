@@ -411,10 +411,20 @@ if st.button("🔍 Run Reconciliation", type="primary", use_container_width=True
         if not ads_df.empty:
             active_df = ads_df[ads_df["final_url_normalized"].isin(active_urls)].copy()
             active_df = active_df.drop(columns=["final_url_normalized"], errors="ignore")
-            display_cols = ["account_name", "campaign_name", "ad_group_name", "keyword", "match_type", "final_url"]
+            display_cols = ["account_name", "campaign_name", "ad_group_name", "keyword", "final_url"]
             active_df = active_df[[c for c in display_cols if c in active_df.columns]]
             active_df = active_df.drop_duplicates()
-            st.dataframe(active_df, use_container_width=True, hide_index=True)
+            # Group keywords by campaign
+            if "keyword" in active_df.columns:
+                grouped = active_df.groupby(
+                    [c for c in ["account_name", "campaign_name", "ad_group_name", "final_url"] if c in active_df.columns],
+                    as_index=False
+                ).agg({"keyword": lambda x: ", ".join(sorted(set(str(k) for k in x if k)))})
+                if "match_type" in active_df.columns:
+                    grouped = grouped.rename(columns={"keyword": "keywords"})
+                st.dataframe(grouped, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(active_df, use_container_width=True, hide_index=True)
         else:
             st.info("No active campaign data to display.")
 
@@ -425,10 +435,20 @@ if st.button("🔍 Run Reconciliation", type="primary", use_container_width=True
         if not ads_df.empty:
             extra_df = ads_df[ads_df["final_url_normalized"].isin(extra_urls)].copy()
             extra_df = extra_df.drop(columns=["final_url_normalized"], errors="ignore")
-            display_cols = ["account_name", "campaign_name", "ad_group_name", "keyword", "match_type", "final_url"]
+            display_cols = ["account_name", "campaign_name", "ad_group_name", "keyword", "final_url"]
             extra_df = extra_df[[c for c in display_cols if c in extra_df.columns]]
             extra_df = extra_df.drop_duplicates()
-            st.dataframe(extra_df, use_container_width=True, hide_index=True)
+            # Group keywords by campaign
+            if "keyword" in extra_df.columns:
+                grouped = extra_df.groupby(
+                    [c for c in ["account_name", "campaign_name", "ad_group_name", "final_url"] if c in extra_df.columns],
+                    as_index=False
+                ).agg({"keyword": lambda x: ", ".join(sorted(set(str(k) for k in x if k)))})
+                if "match_type" in extra_df.columns:
+                    grouped = grouped.rename(columns={"keyword": "keywords"})
+                st.dataframe(grouped, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(extra_df, use_container_width=True, hide_index=True)
 
             csv_buf2 = io.BytesIO()
             extra_df.to_csv(csv_buf2, index=False)
