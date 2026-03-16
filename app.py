@@ -40,18 +40,24 @@ st.caption("Reconcile active campaigns against your master Google Sheet")
 
 # ─── Config / Credentials ───
 def get_google_ads_client():
-    """Build GoogleAdsClient from env vars or secrets."""
+    """Build GoogleAdsClient from env vars using REST transport."""
+    import google.ads.googleads.client
+
     config = {
         "developer_token": os.environ.get("GOOGLE_ADS_DEVELOPER_TOKEN", ""),
         "client_id": os.environ.get("GOOGLE_ADS_CLIENT_ID", ""),
         "client_secret": os.environ.get("GOOGLE_ADS_CLIENT_SECRET", ""),
         "refresh_token": os.environ.get("GOOGLE_ADS_REFRESH_TOKEN", ""),
-        "login_customer_id": os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", ""),
+        "login_customer_id": os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").replace("-", ""),
         "use_proto_plus": True,
     }
-    # Strip hyphens from login_customer_id
-    config["login_customer_id"] = config["login_customer_id"].replace("-", "")
-    return GoogleAdsClient.load_from_dict(config, http_option={"api_endpoint": "https://googleads.googleapis.com"})
+
+    # Use REST transport to avoid gRPC issues on Railway
+    import google.auth.credentials
+    from google.ads.googleads import client as ads_client
+
+    os.environ["GOOGLE_ADS_TRANSPORT"] = "rest"
+    return GoogleAdsClient.load_from_dict(config)
 
 
 def get_gspread_client():
