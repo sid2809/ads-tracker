@@ -3,7 +3,7 @@ import { verifySession, COOKIE_NAME } from "@/lib/auth";
 import { cookies } from "next/headers";
 
 export async function GET() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const cookie = cookieStore.get(COOKIE_NAME);
   const user = await verifySession(cookie?.value);
 

@@ -46,6 +46,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!authLoading && user) fetchDomains();
+    if (!authLoading && !user) setLoading(false);
   }, [authLoading, user, fetchDomains]);
 
   if (authLoading) return null;
