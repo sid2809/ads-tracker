@@ -212,17 +212,39 @@ def fetch_active_final_urls(customer_id: str, login_customer_id: str) -> pd.Data
         pass  # keyword-level data is primary
 
     df = pd.DataFrame(rows)
-    if not df.empty:
-        # Prefer keyword-level rows over ad-level rows for same campaign+url
-        keyword_rows = df[df["source"] == "keyword"]
-        ad_rows = df[df["source"] == "ad"]
-        if not keyword_rows.empty and not ad_rows.empty:
-            # Only keep ad rows for campaign+url combos not covered by keyword rows
-            keyword_keys = set(zip(keyword_rows["campaign_id"], keyword_rows["final_url"]))
-            ad_rows = ad_rows[~ad_rows.apply(lambda r: (r["campaign_id"], r["final_url"]) in keyword_keys, axis=1)]
-            df = pd.concat([keyword_rows, ad_rows], ignore_index=True)
-    if not df.empty:
-        df["final_url_normalized"] = df["final_url"].apply(normalize_url)
+    if df.empty:
+        return df
+
+    # Keyword rows often have empty final_url; ad rows have the URL but no keywords.
+    # Merge them: get final_url from ad-level rows, keywords from keyword-level rows.
+    keyword_df = df[df["source"] == "keyword"][["campaign_id", "campaign_name", "ad_group_id", "ad_group_name", "keyword", "final_url"]].copy()
+    ad_df = df[df["source"] == "ad"][["campaign_id", "campaign_name", "ad_group_id", "ad_group_name", "final_url"]].copy()
+    ad_df = ad_df.rename(columns={"final_url": "ad_final_url"})
+
+    if not keyword_df.empty and not ad_df.empty:
+        # Use ad-level final_url when keyword-level is empty
+        merged = keyword_df.merge(
+            ad_df[["campaign_id", "ad_group_id", "ad_final_url"]].drop_duplicates(),
+            on=["campaign_id", "ad_group_id"],
+            how="outer"
+        )
+        merged["final_url"] = merged.apply(
+            lambda r: r["final_url"] if pd.notna(r.get("final_url")) and r.get("final_url") else r.get("ad_final_url", ""),
+            axis=1
+        )
+        merged = merged.drop(columns=["ad_final_url"], errors="ignore")
+        # Fill missing campaign/ad_group names from ad_df for outer-joined rows
+        for col in ["campaign_name", "ad_group_name"]:
+            if col in merged.columns:
+                merged[col] = merged[col].fillna("")
+        merged["keyword"] = merged["keyword"].fillna("")
+        df = merged
+    else:
+        df = pd.concat([keyword_df, ad_df.rename(columns={"ad_final_url": "final_url"})], ignore_index=True)
+        if "keyword" not in df.columns:
+            df["keyword"] = ""
+
+    df["final_url_normalized"] = df["final_url"].apply(normalize_url)
     return df
 
 
