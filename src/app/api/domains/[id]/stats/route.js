@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin } from "@/lib/api-auth";
 
 // GET /api/domains/[id]/stats — read cached stats
 export async function GET(request, { params }) {
-  const { error } = requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   try {
@@ -32,7 +32,7 @@ export async function GET(request, { params }) {
 // POST /api/domains/[id]/stats — refresh stats (Phase 3 will add real API calls)
 // For Phase 1: accepts stats payload and caches it
 export async function POST(request, { params }) {
-  const { error } = requireAdmin();
+  const { error } = await requireAdmin();
   if (error) return error;
 
   try {

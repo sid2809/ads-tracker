@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin } from "@/lib/api-auth";
 
 // GET /api/domains — list all domains with sheets + settings
 export async function GET() {
-  const { error } = requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   try {
@@ -29,7 +29,7 @@ export async function GET() {
 
 // POST /api/domains — create a new domain
 export async function POST(request) {
-  const { error } = requireAdmin();
+  const { error } = await requireAdmin();
   if (error) return error;
 
   try {

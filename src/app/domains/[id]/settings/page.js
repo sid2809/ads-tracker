@@ -35,7 +35,7 @@ export default function DomainSettingsPage() {
       .then(([d, all, accs]) => {
         setDomain(d);
         setDomains(all);
-        setAccounts(accs);
+        setAccounts(Array.isArray(accs) ? accs : []);
 
         // Populate form
         setDomainName(d.domain_name || "");

@@ -1,19 +1,16 @@
-import { headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { verifySession } from "./auth";
 
-export function getUser() {
-  const h = headers();
-  const raw = h.get("x-user");
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+export async function getUser() {
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get("ads_session");
+  const user = await verifySession(cookie?.value);
+  return user;
 }
 
-export function requireAdmin() {
-  const user = getUser();
+export async function requireAdmin() {
+  const user = await getUser();
   if (!user) {
     return { user: null, error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
@@ -23,8 +20,8 @@ export function requireAdmin() {
   return { user, error: null };
 }
 
-export function requireAuth() {
-  const user = getUser();
+export async function requireAuth() {
+  const user = await getUser();
   if (!user) {
     return { user: null, error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }

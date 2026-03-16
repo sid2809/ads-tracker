@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin } from "@/lib/api-auth";
 
 // GET /api/domains/[id]
 export async function GET(request, { params }) {
-  const { error } = requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   try {
@@ -32,7 +32,7 @@ export async function GET(request, { params }) {
 
 // PUT /api/domains/[id]
 export async function PUT(request, { params }) {
-  const { error } = requireAdmin();
+  const { error } = await requireAdmin();
   if (error) return error;
 
   try {
@@ -80,7 +80,7 @@ export async function PUT(request, { params }) {
 
 // DELETE /api/domains/[id]
 export async function DELETE(request, { params }) {
-  const { error } = requireAdmin();
+  const { error } = await requireAdmin();
   if (error) return error;
 
   try {

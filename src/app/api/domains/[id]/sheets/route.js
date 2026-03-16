@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin } from "@/lib/api-auth";
 
 // GET /api/domains/[id]/sheets
 export async function GET(request, { params }) {
-  const { error } = requireAuth();
+  const { error } = await requireAuth();
   if (error) return error;
 
   try {
@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
 
 // POST /api/domains/[id]/sheets — upsert by sheet_type
 export async function POST(request, { params }) {
-  const { error } = requireAdmin();
+  const { error } = await requireAdmin();
   if (error) return error;
 
   try {
