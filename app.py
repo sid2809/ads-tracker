@@ -67,7 +67,9 @@ def ads_search(customer_id: str, query: str, access_token: str, login_customer_i
     }
     body = {"query": query}
     resp = requests.post(url, headers=headers, json=body)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        error_detail = resp.text[:1000]
+        raise Exception(f"{resp.status_code} Error: {error_detail}")
 
     data = resp.json()
     results = data.get("results", [])
