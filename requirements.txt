@@ -1,0 +1,5 @@
+streamlit==1.41.1
+google-ads==25.1.0
+gspread==6.1.4
+google-auth==2.38.0
+pandas==2.2.3
