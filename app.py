@@ -464,14 +464,29 @@ if st.button("🔍 Run Reconciliation", type="primary", use_container_width=True
         missing_df = missing_df.drop(columns=["final_url_normalized"], errors="ignore")
 
         if not missing_df.empty:
-            st.dataframe(missing_df, use_container_width=True, hide_index=True)
+            missing_df = missing_df.reset_index(drop=True)
+            missing_df.insert(0, "_select", True)
 
-            # CSV download
+            edited_df = st.data_editor(
+                missing_df,
+                column_config={
+                    "_select": st.column_config.CheckboxColumn("Select", default=True)
+                },
+                disabled=[col for col in missing_df.columns if col != "_select"],
+                num_rows="fixed",
+                use_container_width=True,
+                hide_index=True,
+                key="missing_editor",
+            )
+            selected_df = edited_df[edited_df["_select"] == True].drop(columns=["_select"])
+
+            st.caption(f"Selected: {len(selected_df)} of {len(missing_df)} rows")
+
             csv_buf = io.BytesIO()
-            missing_df.to_csv(csv_buf, index=False)
+            selected_df.to_csv(csv_buf, index=False)
             csv_buf.seek(0)
             st.download_button(
-                "⬇️ Download Missing Campaigns CSV",
+                f"⬇️ Download {len(selected_df)} Selected Campaigns CSV",
                 data=csv_buf,
                 file_name="missing_campaigns.csv",
                 mime="text/csv",
