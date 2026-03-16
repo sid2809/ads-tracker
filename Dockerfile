@@ -10,6 +10,7 @@ RUN npm ci --prefer-offline
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
 COPY next.config.js tailwind.config.js postcss.config.js jsconfig.json ./
 COPY src ./src
 COPY public ./public
