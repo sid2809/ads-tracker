@@ -6,6 +6,7 @@ import NavBar from "@/components/NavBar";
 import SaveCachePrompt from "@/components/SaveCachePrompt";
 import MetricsPanel from "@/components/MetricsPanel";
 import ReportsTab from "@/components/ReportsTab";
+import { downloadCSV } from "@/lib/csv-download";
 
 function timeAgo(dateStr) {
   if (!dateStr) return null;
@@ -47,6 +48,9 @@ export default function DomainHubPage() {
   const [reconResults, setReconResults] = useState(null);
   const [reconLoading, setReconLoading] = useState(false);
   const [reconTab, setReconTab] = useState("missing");
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState(null);
 
   // Override detection
   const [showCachePrompt, setShowCachePrompt] = useState(false);
@@ -138,6 +142,46 @@ export default function DomainHubPage() {
       if (res.ok) setSearchResults(Array.isArray(data) ? data : data?.results || []);
     } catch { /* ignore */ }
     finally { setSearchLoading(false); }
+  }
+
+  function toggleRowSelection(index) {
+    setSelectedRows(prev =>
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
+  }
+
+  function toggleSelectAll(rows) {
+    if (selectedRows.length === rows.length) {
+      setSelectedRows([]);
+    } else {
+      setSelectedRows(rows.map((_, i) => i));
+    }
+  }
+
+  async function pushToSheet() {
+    const missing = reconResults?.missing || [];
+    const selected = selectedRows.map(i => missing[i]).filter(Boolean);
+    if (selected.length === 0) return;
+
+    setPushing(true);
+    setPushResult(null);
+    try {
+      const res = await fetch(`/api/domains/${id}/push-campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: selected }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPushResult({ success: true, count: data.rowsAppended });
+      } else {
+        setPushResult({ success: false, error: data.error });
+      }
+    } catch {
+      setPushResult({ success: false, error: "Network error" });
+    } finally {
+      setPushing(false);
+    }
   }
 
   if (authLoading || loading) {
@@ -301,8 +345,43 @@ export default function DomainHubPage() {
                     </button>
                   ))}
                 </div>
+                {/* Action bar */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {reconTab === "missing" && reconResults?.missing?.length > 0 && (
+                      <>
+                        <button className="btn btn-secondary" onClick={() => downloadCSV(reconResults.missing, `${domain.domain_name}-missing.csv`)}
+                          style={{ padding: "4px 10px", fontSize: 11 }}>
+                          ↓ CSV
+                        </button>
+                        <button className="btn btn-primary" onClick={pushToSheet}
+                          disabled={pushing || selectedRows.length === 0}
+                          style={{ padding: "4px 10px", fontSize: 11 }}>
+                          {pushing ? <><span className="spinner" style={{width:12,height:12}}/> Pushing...</> : `Push ${selectedRows.length} to Sheet`}
+                        </button>
+                      </>
+                    )}
+                    {reconTab === "active" && reconResults?.active?.length > 0 && (
+                      <button className="btn btn-secondary" onClick={() => downloadCSV(reconResults.active, `${domain.domain_name}-active.csv`)}
+                        style={{ padding: "4px 10px", fontSize: 11 }}>
+                        ↓ CSV
+                      </button>
+                    )}
+                    {reconTab === "extra" && reconResults?.extra?.length > 0 && (
+                      <button className="btn btn-secondary" onClick={() => downloadCSV(reconResults.extra, `${domain.domain_name}-extra.csv`)}
+                        style={{ padding: "4px 10px", fontSize: 11 }}>
+                        ↓ CSV
+                      </button>
+                    )}
+                  </div>
+                  {pushResult && (
+                    <span style={{ fontSize: 11, color: pushResult.success ? "var(--status-green)" : "var(--status-red)" }}>
+                      {pushResult.success ? `✓ ${pushResult.count} rows pushed to sheet` : `✗ ${pushResult.error}`}
+                    </span>
+                  )}
+                </div>
                 <div className="card" style={{ maxHeight: 500, overflow: "auto" }}>
-                  {reconTab === "missing" && renderTable(reconResults.missing || [])}
+                  {reconTab === "missing" && renderMissingTable(reconResults.missing || [], selectedRows, toggleRowSelection, toggleSelectAll)}
                   {reconTab === "active" && renderCampaignTable(reconResults.active || [])}
                   {reconTab === "extra" && renderCampaignTable(reconResults.extra || [])}
                 </div>
@@ -350,6 +429,14 @@ export default function DomainHubPage() {
               </div>
             )}
             {searchResults && Array.isArray(searchResults) && searchResults.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <button className="btn btn-secondary" onClick={() => downloadCSV(searchResults, `${domain.domain_name}-search.csv`)}
+                  style={{ padding: "4px 10px", fontSize: 11 }}>
+                  ↓ CSV
+                </button>
+              </div>
+            )}
+            {searchResults && Array.isArray(searchResults) && searchResults.length > 0 && (
               <div className="card fade-in" style={{ maxHeight: 500, overflow: "auto" }}>{renderCampaignTable(searchResults)}</div>
             )}
             {searchResults && Array.isArray(searchResults) && searchResults.length === 0 && (
@@ -384,6 +471,41 @@ function renderTable(rows) {
           {keys.map(k => <td key={k} style={{ padding: "8px 12px", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{row[k]}</td>)}
         </tr>
       ))}</tbody>
+    </table>
+  );
+}
+
+function renderMissingTable(rows, selectedRows, toggleRow, toggleAll) {
+  if (!rows || rows.length === 0) return <p style={{ color: "var(--text-tertiary)", fontSize: 12, padding: 16 }}>No rows</p>;
+  const keys = Object.keys(rows[0]);
+  return (
+    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <thead>
+        <tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
+          <th style={{ padding: "8px 12px", width: 40 }}>
+            <input type="checkbox" checked={selectedRows.length === rows.length && rows.length > 0}
+              onChange={() => toggleAll(rows)} />
+          </th>
+          {keys.map(k => (
+            <th key={k} style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>{k}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr key={i} style={{
+            borderBottom: "1px solid var(--border-secondary)",
+            background: selectedRows.includes(i) ? "var(--bg-hover)" : "transparent",
+          }}>
+            <td style={{ padding: "8px 12px" }}>
+              <input type="checkbox" checked={selectedRows.includes(i)} onChange={() => toggleRow(i)} />
+            </td>
+            {keys.map(k => (
+              <td key={k} style={{ padding: "8px 12px", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{row[k]}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
     </table>
   );
 }

@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
+import { downloadCSV } from "@/lib/csv-download";
 
 export default function DomainSearchPage() {
   const { user, loading: authLoading } = useAuth();
@@ -106,6 +107,14 @@ export default function DomainSearchPage() {
         </div>
 
         {/* Results */}
+        {results && Array.isArray(results) && results.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <button className="btn btn-secondary" onClick={() => downloadCSV(results, `domain-search.csv`)}
+              style={{ padding: "4px 10px", fontSize: 11 }}>
+              ↓ Download CSV
+            </button>
+          </div>
+        )}
         {results && Array.isArray(results) && results.length > 0 && (
           <div className="card fade-in" style={{ maxHeight: 600, overflow: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>

@@ -25,6 +25,8 @@ export default function DomainSettingsPage() {
   const [worksheetName, setWorksheetName] = useState("");
   const [urlColumn, setUrlColumn] = useState("Final_URL");
   const [sparklineMetric, setSparklineMetric] = useState("clicks");
+  const [outputSheetUrl, setOutputSheetUrl] = useState("");
+  const [outputWorksheetName, setOutputWorksheetName] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -50,6 +52,12 @@ export default function DomainSettingsPage() {
         }
 
         setSparklineMetric(d.settings?.dashboard_sparkline_metric || "clicks");
+
+        const outputSheet = d.sheets?.find((s) => s.sheet_type === "output");
+        if (outputSheet) {
+          setOutputSheetUrl(outputSheet.sheet_url || "");
+          setOutputWorksheetName(outputSheet.worksheet_name || "");
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -79,6 +87,19 @@ export default function DomainSettingsPage() {
             sheet_url: sheetUrl,
             worksheet_name: worksheetName,
             url_column: urlColumn,
+          }),
+        });
+      }
+
+      // Upsert output sheet
+      if (outputSheetUrl) {
+        await fetch(`/api/domains/${id}/sheets`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sheet_type: "output",
+            sheet_url: outputSheetUrl,
+            worksheet_name: outputWorksheetName,
           }),
         });
       }
@@ -230,17 +251,24 @@ export default function DomainSettingsPage() {
           </select>
         </div>
 
-        {/* Section 5: Output Sheet placeholder */}
-        <div className="card" style={{ marginBottom: 16, opacity: 0.5 }}>
-          <h2 style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 8 }}>
-            Output Sheet
-            <span className="badge" style={{ marginLeft: 8, background: "var(--bg-tertiary)", color: "var(--text-tertiary)" }}>
-              Coming soon
-            </span>
-          </h2>
-          <p style={{ color: "var(--text-tertiary)", fontSize: 12 }}>
-            Configure an output sheet for campaign creation in a future update.
+        {/* Section 5: Output Sheet */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 16 }}>Output Sheet</h2>
+          <p style={{ color: "var(--text-tertiary)", fontSize: 12, marginBottom: 12 }}>
+            Missing URLs will be pushed to this sheet when you click "Push to Sheet" in the reconciliation tab.
           </p>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Sheet URL</label>
+              <input value={outputSheetUrl} onChange={(e) => setOutputSheetUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..." style={{ width: "100%" }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Worksheet</label>
+              <input value={outputWorksheetName} onChange={(e) => setOutputWorksheetName(e.target.value)}
+                placeholder="Sheet1" style={{ width: "100%" }} />
+            </div>
+          </div>
         </div>
 
         {/* Actions */}

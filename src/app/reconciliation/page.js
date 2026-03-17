@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
+import { downloadCSV } from "@/lib/csv-download";
 
 
 export default function ReconciliationPage() {
@@ -163,6 +164,15 @@ export default function ReconciliationPage() {
                 </button>
               ))}
             </div>
+
+            {results && (
+              <div style={{ marginBottom: 8 }}>
+                <button className="btn btn-secondary" onClick={() => downloadCSV(results[activeTab] || [], `standalone-${activeTab}.csv`)}
+                  style={{ padding: "4px 10px", fontSize: 11 }}>
+                  ↓ Download {activeTab} CSV
+                </button>
+              </div>
+            )}
 
             {/* Tab content */}
             <div className="card" style={{ maxHeight: 500, overflow: "auto" }}>
