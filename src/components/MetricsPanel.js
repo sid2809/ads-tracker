@@ -39,13 +39,25 @@ const METRICS = [
   { key: "cost", label: "Total Cost", color: "var(--sparkline-cost)", format: formatMoney, totalKey: "cost" },
 ];
 
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 const PRESETS = [
   { label: "7d", days: 7 },
   { label: "14d", days: 14 },
   { label: "30d", days: 30 },
 ];
 
-export default function MetricsPanel({ stats, domainId, isAdmin, onRefresh }) {
+export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRefresh }) {
   const [selectedMetric, setSelectedMetric] = useState("clicks");
   const [activeDays, setActiveDays] = useState(stats?.dateRange?.days || 30);
   const [showCustom, setShowCustom] = useState(false);
@@ -100,6 +112,16 @@ export default function MetricsPanel({ stats, domainId, isAdmin, onRefresh }) {
           <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
             {dateRange ? getRangeLabel(dateRange) : "No metrics data"}
           </span>
+          {updatedAt && (
+            <span style={{
+              fontSize: 10, padding: "3px 8px", borderRadius: 4,
+              background: "var(--bg-tertiary)", border: "1px solid var(--border-primary)",
+              color: "var(--text-tertiary)", fontFamily: "'JetBrains Mono', monospace",
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}>
+              Cached · {timeAgo(updatedAt)}
+            </span>
+          )}
           {refreshing && <span className="spinner" style={{ width: 12, height: 12 }} />}
         </div>
 

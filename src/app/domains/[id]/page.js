@@ -185,7 +185,7 @@ export default function DomainHubPage() {
         </div>
 
         {/* Metrics panel — handles its own date range + refresh */}
-        <MetricsPanel stats={statsData} domainId={id} isAdmin={isAdmin} onRefresh={fetchAll} />
+        <MetricsPanel stats={statsData} updatedAt={statsUpdatedAt} domainId={id} isAdmin={isAdmin} onRefresh={fetchAll} />
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border-primary)", paddingBottom: 8 }}>
