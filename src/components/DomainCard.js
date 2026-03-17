@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Sparkline from "./Sparkline";
 
@@ -22,9 +23,23 @@ const METRIC_LABELS = {
   cost: "Cost",
 };
 
-export default function DomainCard({ domain, stats, updatedAt, isAdmin }) {
+export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefresh }) {
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
   const metric = stats?.sparkline?.metric || "clicks";
+
+  async function handleRefresh(e) {
+    e.stopPropagation();
+    setRefreshing(true);
+    try {
+      await fetch(`/api/domains/${domain.id}/stats`, { method: "POST" });
+      if (onRefresh) onRefresh();
+    } catch {
+      // ignore
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   return (
     <div
@@ -55,15 +70,45 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin }) {
           </span>
         </div>
 
-        <span className="badge" style={{
-          background: "var(--bg-tertiary)",
-          color: "var(--text-tertiary)",
-          fontSize: 10,
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-        }}>
-          {METRIC_LABELS[metric] || "Clicks"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="badge" style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-tertiary)",
+            fontSize: 10,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}>
+            {METRIC_LABELS[metric] || "Clicks"}
+          </span>
+
+          {isAdmin && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: refreshing ? "default" : "pointer",
+                color: "var(--text-tertiary)",
+                padding: 2,
+                display: "flex",
+                opacity: refreshing ? 0.5 : 1,
+                transition: "opacity 0.15s",
+              }}
+              title="Refresh stats"
+            >
+              {refreshing ? (
+                <span className="spinner" style={{ width: 14, height: 14 }} />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sparkline */}

@@ -112,6 +112,7 @@ export default function DashboardPage() {
                 stats={statsMap[d.id]?.data}
                 updatedAt={statsMap[d.id]?.updated_at}
                 isAdmin={isAdmin}
+                onRefresh={fetchDomains}
               />
             ))}
           </div>

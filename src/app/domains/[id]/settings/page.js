@@ -83,10 +83,12 @@ export default function DomainSettingsPage() {
         });
       }
 
-      // Upsert sparkline metric setting
-      // Using a simple approach: POST to a settings endpoint
-      // For Phase 1, we'll store it via the domain_settings table
-      // We can add a dedicated settings endpoint later if needed
+      // Save sparkline metric setting
+      await fetch(`/api/domains/${id}/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dashboard_sparkline_metric: sparklineMetric }),
+      });
 
       setToast("Settings saved");
       setTimeout(() => setToast(""), 3000);

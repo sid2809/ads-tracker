@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { requireAuth, requireAdmin } from "@/lib/api-auth";
+import { fetch30DayMetrics, extractSparklineData } from "@/lib/google-ads-metrics";
 
 // GET /api/domains/[id]/stats — read cached stats
 export async function GET(request, { params }) {
@@ -29,28 +30,73 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/domains/[id]/stats — refresh stats (Phase 3 will add real API calls)
-// For Phase 1: accepts stats payload and caches it
+// POST /api/domains/[id]/stats — refresh stats from Google Ads + cached reconciliation
 export async function POST(request, { params }) {
   const { error } = await requireAdmin();
   if (error) return error;
 
   try {
     const { id } = params;
-    const body = await request.json();
 
-    const { rows } = await query(
+    // 1. Read domain config
+    const { rows: domainRows } = await query("SELECT * FROM domains WHERE id = $1", [id]);
+    if (domainRows.length === 0) {
+      return NextResponse.json({ error: "Domain not found" }, { status: 404 });
+    }
+    const domain = domainRows[0];
+    const accountIds = Array.isArray(domain.account_ids) ? domain.account_ids : [];
+
+    // 2. Read sparkline metric setting
+    const { rows: settingsRows } = await query(
+      "SELECT setting_value FROM domain_settings WHERE domain_id = $1 AND setting_key = 'dashboard_sparkline_metric'",
+      [id]
+    );
+    const sparklineMetric = settingsRows[0]?.setting_value || "clicks";
+
+    // 3. Read existing reconciliation cache for counts
+    let reconStats = { sheetUrls: 0, active: 0, missing: 0, extra: 0 };
+    const { rows: cacheRows } = await query(
+      "SELECT cache_data FROM domain_cache WHERE domain_id = $1 AND cache_type = 'reconciliation'",
+      [id]
+    );
+    if (cacheRows.length > 0 && cacheRows[0].cache_data?.stats) {
+      reconStats = cacheRows[0].cache_data.stats;
+    }
+
+    // 4. Fetch 30-day metrics from Google Ads
+    let sparklineData = [];
+    if (accountIds.length > 0) {
+      try {
+        const dailyMetrics = await fetch30DayMetrics(accountIds);
+        sparklineData = extractSparklineData(dailyMetrics, sparklineMetric);
+      } catch (err) {
+        console.error("[stats refresh] metrics fetch error:", err.message);
+        // Continue with empty sparkline — don't fail the whole request
+      }
+    }
+
+    // 5. Build stats object
+    const statsData = {
+      ...reconStats,
+      sparkline: {
+        metric: sparklineMetric,
+        data: sparklineData,
+      },
+    };
+
+    // 6. Cache it
+    const { rows: saved } = await query(
       `INSERT INTO domain_cache (domain_id, cache_type, cache_data)
        VALUES ($1, 'stats', $2)
        ON CONFLICT (domain_id, cache_type)
        DO UPDATE SET cache_data = $2, created_at = NOW()
        RETURNING *`,
-      [id, JSON.stringify(body)]
+      [id, JSON.stringify(statsData)]
     );
 
     return NextResponse.json({
-      data: rows[0].cache_data,
-      updated_at: rows[0].created_at,
+      data: saved[0].cache_data,
+      updated_at: saved[0].created_at,
     });
   } catch (err) {
     console.error("[api/domains/[id]/stats POST]", err);
