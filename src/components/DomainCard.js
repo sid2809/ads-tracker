@@ -24,8 +24,16 @@ function formatNum(n) {
 
 function formatMoney(n) {
   if (n == null || isNaN(n)) return "—";
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${n.toFixed(2)}`;
+  if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
+  return `₹${n.toFixed(2)}`;
+}
+
+function rangeLabel(dateRange) {
+  if (!dateRange) return "";
+  if (dateRange.days === 7) return "7d";
+  if (dateRange.days === 14) return "14d";
+  if (dateRange.days === 30) return "30d";
+  return `${dateRange.days}d`;
 }
 
 const METRIC_LABELS = {
@@ -41,29 +49,28 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
   const [refreshing, setRefreshing] = useState(false);
   const metric = stats?.sparkline?.metric || "clicks";
   const totals = stats?.totals;
+  const dateRange = stats?.dateRange;
 
   async function handleRefresh(e) {
     e.stopPropagation();
     setRefreshing(true);
     try {
-      await fetch(`/api/domains/${domain.id}/stats`, { method: "POST" });
+      const days = dateRange?.days || 30;
+      await fetch(`/api/domains/${domain.id}/stats`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days }),
+      });
       if (onRefresh) onRefresh();
-    } catch {
-      // ignore
-    } finally {
-      setRefreshing(false);
-    }
+    } catch { /* ignore */ }
+    finally { setRefreshing(false); }
   }
 
   return (
     <div
       className="card fade-in"
       onClick={() => router.push(`/domains/${domain.id}`)}
-      style={{
-        cursor: "pointer",
-        transition: "border-color 0.15s",
-        position: "relative",
-      }}
+      style={{ cursor: "pointer", transition: "border-color 0.15s", position: "relative" }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--text-tertiary)")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--border-primary)")}
     >
@@ -71,52 +78,37 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
         <div>
           <h3 style={{
-            color: "var(--text-primary)",
-            fontSize: 14,
-            fontWeight: 500,
-            fontFamily: "'JetBrains Mono', monospace",
-            marginBottom: 2,
+            color: "var(--text-primary)", fontSize: 14, fontWeight: 500,
+            fontFamily: "'JetBrains Mono', monospace", marginBottom: 2,
           }}>
             {domain.domain_name}
           </h3>
           <span style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
             {timeAgo(updatedAt)}
+            {dateRange && <span style={{ marginLeft: 6, opacity: 0.7 }}>· {rangeLabel(dateRange)}</span>}
           </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span className="badge" style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-tertiary)",
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
+            background: "var(--bg-tertiary)", color: "var(--text-tertiary)",
+            fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em",
           }}>
             {METRIC_LABELS[metric] || "Clicks"}
           </span>
 
           {isAdmin && (
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: refreshing ? "default" : "pointer",
-                color: "var(--text-tertiary)",
-                padding: 2,
-                display: "flex",
-                opacity: refreshing ? 0.5 : 1,
-                transition: "opacity 0.15s",
-              }}
-              title="Refresh stats"
-            >
+            <button onClick={handleRefresh} disabled={refreshing} style={{
+              background: "none", border: "none",
+              cursor: refreshing ? "default" : "pointer",
+              color: "var(--text-tertiary)", padding: 2, display: "flex",
+              opacity: refreshing ? 0.5 : 1, transition: "opacity 0.15s",
+            }} title="Refresh stats">
               {refreshing ? (
                 <span className="spinner" style={{ width: 14, height: 14 }} />
               ) : (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
+                  <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
                   <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
               )}
@@ -127,23 +119,15 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
 
       {/* Sparkline */}
       <div style={{ marginBottom: 10 }}>
-        <Sparkline
-          data={stats?.sparkline?.data || []}
-          metric={metric}
-          width={248}
-          height={40}
-        />
+        <Sparkline data={stats?.sparkline?.data || []} metric={metric} width={248} height={40} />
       </div>
 
       {/* Metrics row */}
       {totals && (
         <div style={{
-          display: "flex",
-          gap: 10,
-          fontSize: 11,
+          display: "flex", gap: 10, fontSize: 11,
           fontFamily: "'JetBrains Mono', monospace",
-          marginBottom: 10,
-          paddingBottom: 10,
+          marginBottom: 10, paddingBottom: 10,
           borderBottom: "1px solid var(--border-secondary)",
         }}>
           <span>
@@ -164,21 +148,15 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
       {/* Reconciliation stats row */}
       <div style={{ display: "flex", gap: 12, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
         <span>
-          <span style={{ color: "var(--status-green)", fontWeight: 500 }}>
-            {stats?.active ?? "—"}
-          </span>{" "}
+          <span style={{ color: "var(--status-green)", fontWeight: 500 }}>{stats?.active ?? "—"}</span>{" "}
           <span style={{ color: "var(--text-tertiary)" }}>active</span>
         </span>
         <span>
-          <span style={{ color: "var(--status-red)", fontWeight: 500 }}>
-            {stats?.missing ?? "—"}
-          </span>{" "}
+          <span style={{ color: "var(--status-red)", fontWeight: 500 }}>{stats?.missing ?? "—"}</span>{" "}
           <span style={{ color: "var(--text-tertiary)" }}>missing</span>
         </span>
         <span>
-          <span style={{ color: "var(--status-amber)", fontWeight: 500 }}>
-            {stats?.extra ?? "—"}
-          </span>{" "}
+          <span style={{ color: "var(--status-amber)", fontWeight: 500 }}>{stats?.extra ?? "—"}</span>{" "}
           <span style={{ color: "var(--text-tertiary)" }}>extra</span>
         </span>
       </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
@@ -26,7 +26,6 @@ export default function DomainHubPage() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Tab state
   const [activeTab, setActiveTab] = useState("reconciliation");
 
   // Cached results
@@ -36,7 +35,6 @@ export default function DomainHubPage() {
   // Stats data (metrics + sparklines)
   const [statsData, setStatsData] = useState(null);
   const [statsUpdatedAt, setStatsUpdatedAt] = useState(null);
-  const [statsRefreshing, setStatsRefreshing] = useState(false);
 
   // Reconciliation form
   const [sheetUrl, setSheetUrl] = useState("");
@@ -59,114 +57,71 @@ export default function DomainHubPage() {
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Saved settings
   const [savedConfig, setSavedConfig] = useState(null);
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`/api/domains/${id}`).then((r) => r.json()),
-      fetch("/api/domains").then((r) => r.json()),
-      fetch("/api/accounts").then((r) => r.json()),
-      fetch(`/api/domains/${id}/cache`).then((r) => r.json()),
-      fetch(`/api/domains/${id}/stats`).then((r) => r.json()),
-    ])
-      .then(([d, all, accs, cache, stats]) => {
-        setDomain(d);
-        setDomains(Array.isArray(all) ? all : []);
-        const accountList = Array.isArray(accs?.accounts) ? accs.accounts : Array.isArray(accs) ? accs : [];
-        setAccounts(accountList);
+  const fetchAll = useCallback(async () => {
+    try {
+      const [d, all, accs, cache, stats] = await Promise.all([
+        fetch(`/api/domains/${id}`).then(r => r.json()),
+        fetch("/api/domains").then(r => r.json()),
+        fetch("/api/accounts").then(r => r.json()),
+        fetch(`/api/domains/${id}/cache`).then(r => r.json()),
+        fetch(`/api/domains/${id}/stats`).then(r => r.json()),
+      ]);
 
-        // Pre-fill forms
-        const sourceSheet = d.sheets?.find((s) => s.sheet_type === "source");
-        const savedSheetUrl = sourceSheet?.sheet_url || "";
-        const savedWorksheet = sourceSheet?.worksheet_name || "";
-        const savedUrlCol = sourceSheet?.url_column || "Final_URL";
-        const savedAccountIds = Array.isArray(d.account_ids) ? d.account_ids : [];
+      setDomain(d);
+      setDomains(Array.isArray(all) ? all : []);
+      setAccounts(Array.isArray(accs?.accounts) ? accs.accounts : Array.isArray(accs) ? accs : []);
 
-        setSheetUrl(savedSheetUrl);
-        setWorksheetName(savedWorksheet);
-        setUrlColumn(savedUrlCol);
-        setSelectedAccounts(savedAccountIds);
-        setSavedConfig({ sheetUrl: savedSheetUrl, worksheetName: savedWorksheet, urlColumn: savedUrlCol, accountIds: savedAccountIds });
-        setSearchDomain(d.domain_name || "");
-        setSearchAccounts(savedAccountIds);
+      const sourceSheet = d.sheets?.find(s => s.sheet_type === "source");
+      const cfg = {
+        sheetUrl: sourceSheet?.sheet_url || "",
+        worksheetName: sourceSheet?.worksheet_name || "",
+        urlColumn: sourceSheet?.url_column || "Final_URL",
+        accountIds: Array.isArray(d.account_ids) ? d.account_ids : [],
+      };
+      setSheetUrl(cfg.sheetUrl);
+      setWorksheetName(cfg.worksheetName);
+      setUrlColumn(cfg.urlColumn);
+      setSelectedAccounts(cfg.accountIds);
+      setSavedConfig(cfg);
+      setSearchDomain(d.domain_name || "");
+      setSearchAccounts(cfg.accountIds);
 
-        // Load cached reconciliation
-        if (cache?.data) {
-          setCachedData(cache.data);
-          setCacheUpdatedAt(cache.updated_at);
-          setReconResults(cache.data);
-        }
-
-        // Load cached stats
-        if (stats?.data) {
-          setStatsData(stats.data);
-          setStatsUpdatedAt(stats.updated_at);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      if (cache?.data) { setCachedData(cache.data); setCacheUpdatedAt(cache.updated_at); setReconResults(cache.data); }
+      if (stats?.data) { setStatsData(stats.data); setStatsUpdatedAt(stats.updated_at); }
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
   }, [id]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const isAdmin = user?.role === "admin";
 
   function isOverride() {
     if (!savedConfig) return false;
-    return (
-      sheetUrl !== savedConfig.sheetUrl ||
-      worksheetName !== savedConfig.worksheetName ||
+    return sheetUrl !== savedConfig.sheetUrl || worksheetName !== savedConfig.worksheetName ||
       urlColumn !== savedConfig.urlColumn ||
-      JSON.stringify(selectedAccounts.slice().sort()) !== JSON.stringify(savedConfig.accountIds.slice().sort())
-    );
+      JSON.stringify(selectedAccounts.slice().sort()) !== JSON.stringify(savedConfig.accountIds.slice().sort());
   }
 
   async function saveToCache(results) {
     try {
-      await fetch(`/api/domains/${id}/cache`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(results),
-      });
-      setCachedData(results);
-      setCacheUpdatedAt(new Date().toISOString());
+      await fetch(`/api/domains/${id}/cache`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(results) });
+      setCachedData(results); setCacheUpdatedAt(new Date().toISOString());
     } catch { /* ignore */ }
-  }
-
-  async function refreshStats() {
-    setStatsRefreshing(true);
-    try {
-      const res = await fetch(`/api/domains/${id}/stats`, { method: "POST" });
-      const data = await res.json();
-      if (data?.data) {
-        setStatsData(data.data);
-        setStatsUpdatedAt(data.updated_at);
-      }
-    } catch { /* ignore */ }
-    finally { setStatsRefreshing(false); }
   }
 
   async function runReconciliation() {
     if (!sheetUrl || selectedAccounts.length === 0) return;
-    setReconLoading(true);
-    setShowCachePrompt(false);
-    setPendingResults(null);
-
+    setReconLoading(true); setShowCachePrompt(false); setPendingResults(null);
     try {
-      const res = await fetch("/api/reconcile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountIds: selectedAccounts, sheetUrl, worksheetName, urlColumn }),
-      });
+      const res = await fetch("/api/reconcile", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountIds: selectedAccounts, sheetUrl, worksheetName, urlColumn }) });
       const data = await res.json();
-
       if (res.ok) {
         setReconResults(data);
-        if (!isOverride()) {
-          await saveToCache(data);
-        } else {
-          setPendingResults(data);
-          setShowCachePrompt(true);
-        }
+        if (!isOverride()) { await saveToCache(data); } else { setPendingResults(data); setShowCachePrompt(true); }
       }
     } catch { /* ignore */ }
     finally { setReconLoading(false); }
@@ -176,11 +131,8 @@ export default function DomainHubPage() {
     if (!searchDomain || searchAccounts.length === 0) return;
     setSearchLoading(true);
     try {
-      const res = await fetch("/api/domain-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain: searchDomain, accountIds: searchAccounts }),
-      });
+      const res = await fetch("/api/domain-search", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: searchDomain, accountIds: searchAccounts }) });
       const data = await res.json();
       if (res.ok) setSearchResults(Array.isArray(data) ? data : data?.results || []);
     } catch { /* ignore */ }
@@ -188,22 +140,18 @@ export default function DomainHubPage() {
   }
 
   if (authLoading || loading) {
-    return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
-        <div style={{ display: "flex", justifyContent: "center", padding: 64 }}><span className="spinner" /></div>
-      </div>
-    );
+    return <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
+      <div style={{ display: "flex", justifyContent: "center", padding: 64 }}><span className="spinner" /></div>
+    </div>;
   }
 
   if (!domain || domain.error) {
-    return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
-        <NavBar user={user} domains={domains} />
-        <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
-          <p style={{ color: "var(--text-tertiary)" }}>Domain not found</p>
-        </main>
-      </div>
-    );
+    return <div style={{ minHeight: "100vh", background: "var(--bg-primary)" }}>
+      <NavBar user={user} domains={domains} />
+      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 24px", textAlign: "center" }}>
+        <p style={{ color: "var(--text-tertiary)" }}>Domain not found</p>
+      </main>
+    </div>;
   }
 
   const reconStats = reconResults?.stats || cachedData?.stats || {};
@@ -216,10 +164,7 @@ export default function DomainHubPage() {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
           <div>
-            <h1 style={{
-              color: "var(--text-primary)", fontSize: 20, fontWeight: 500,
-              fontFamily: "'JetBrains Mono', monospace", marginBottom: 4,
-            }}>
+            <h1 style={{ color: "var(--text-primary)", fontSize: 20, fontWeight: 500, fontFamily: "'JetBrains Mono', monospace", marginBottom: 4 }}>
               {domain.domain_name}
             </h1>
             <p style={{ color: "var(--text-tertiary)", fontSize: 12 }}>
@@ -229,122 +174,87 @@ export default function DomainHubPage() {
               {!cacheUpdatedAt && !statsUpdatedAt && "No data yet"}
             </p>
           </div>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            {isAdmin && (
-              <button
-                className="btn btn-secondary"
-                onClick={refreshStats}
-                disabled={statsRefreshing}
-                title="Refresh Google Ads metrics"
-              >
-                {statsRefreshing ? (
-                  <><span className="spinner" style={{ width: 14, height: 14 }} /> Refreshing...</>
-                ) : (
-                  <>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10" />
-                      <polyline points="1 20 1 14 7 14" />
-                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-                    </svg>
-                    Refresh Metrics
-                  </>
-                )}
-              </button>
-            )}
-            {isAdmin && (
-              <a href={`/domains/${id}/settings`} className="btn btn-secondary" style={{ textDecoration: "none" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-                </svg>
-                Settings
-              </a>
-            )}
-          </div>
+          {isAdmin && (
+            <a href={`/domains/${id}/settings`} className="btn btn-secondary" style={{ textDecoration: "none" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              Settings
+            </a>
+          )}
         </div>
 
-        {/* Reconciliation stats bar */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-          {[
-            { label: "Sheet URLs", value: reconStats.sheetUrls, color: "var(--text-primary)" },
-            { label: "Active", value: reconStats.active, color: "var(--status-green)" },
-            { label: "Missing", value: reconStats.missing, color: "var(--status-red)" },
-            { label: "Extra", value: reconStats.extra, color: "var(--status-amber)" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="card" style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 20, fontWeight: 500, color, fontFamily: "'JetBrains Mono', monospace" }}>
-                {value ?? "—"}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Metrics panel (sparklines + totals) */}
-        <MetricsPanel stats={statsData} />
+        {/* Metrics panel — handles its own date range + refresh */}
+        <MetricsPanel stats={statsData} domainId={id} isAdmin={isAdmin} onRefresh={fetchAll} />
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--border-primary)", paddingBottom: 8 }}>
-          {["reconciliation", "search"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                padding: "6px 14px", fontSize: 13, border: "none", borderRadius: 6, cursor: "pointer",
-                background: activeTab === tab ? "var(--bg-tertiary)" : "transparent",
-                color: activeTab === tab ? "var(--text-primary)" : "var(--text-tertiary)",
-                fontWeight: activeTab === tab ? 500 : 400,
-              }}
-            >
+          {["reconciliation", "search"].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} style={{
+              padding: "6px 14px", fontSize: 13, border: "none", borderRadius: 6, cursor: "pointer",
+              background: activeTab === tab ? "var(--bg-tertiary)" : "transparent",
+              color: activeTab === tab ? "var(--text-primary)" : "var(--text-tertiary)",
+              fontWeight: activeTab === tab ? 500 : 400,
+            }}>
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
           <button disabled style={{
             padding: "6px 14px", fontSize: 13, border: "none", borderRadius: 6,
             background: "transparent", color: "var(--text-tertiary)", opacity: 0.5, cursor: "default",
-          }}>
-            Reports <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>Soon</span>
-          </button>
+          }}>Reports <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>Soon</span></button>
         </div>
 
         {/* ==================== RECONCILIATION TAB ==================== */}
         {activeTab === "reconciliation" && (
           <div>
+            {/* Recon stats — moved here from above */}
+            {(reconStats.sheetUrls || reconStats.active || reconStats.missing || reconStats.extra) ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+                {[
+                  { label: "Sheet URLs", value: reconStats.sheetUrls, color: "var(--text-primary)" },
+                  { label: "Active", value: reconStats.active, color: "var(--status-green)" },
+                  { label: "Missing", value: reconStats.missing, color: "var(--status-red)" },
+                  { label: "Extra", value: reconStats.extra, color: "var(--status-amber)" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="card" style={{ textAlign: "center", padding: "10px 8px" }}>
+                    <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, color, fontFamily: "'JetBrains Mono', monospace" }}>{value ?? "—"}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             {isAdmin && (
               <div className="card" style={{ marginBottom: 20 }}>
                 <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr", marginBottom: 16 }}>
                   <div>
                     <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Sheet URL</label>
-                    <input value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." style={{ width: "100%" }} />
+                    <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." style={{ width: "100%" }} />
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Worksheet</label>
-                    <input value={worksheetName} onChange={(e) => setWorksheetName(e.target.value)} placeholder="Sheet1" style={{ width: "100%" }} />
+                    <input value={worksheetName} onChange={e => setWorksheetName(e.target.value)} placeholder="Sheet1" style={{ width: "100%" }} />
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>URL Column</label>
-                    <input value={urlColumn} onChange={(e) => setUrlColumn(e.target.value)} style={{ width: "100%" }} />
+                    <input value={urlColumn} onChange={e => setUrlColumn(e.target.value)} style={{ width: "100%" }} />
                   </div>
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>Ad Accounts</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {accounts.map((acc) => (
+                    {accounts.map(acc => (
                       <label key={acc.id} style={{
                         display: "flex", alignItems: "center", gap: 6,
-                        padding: "4px 10px", borderRadius: 6,
-                        border: "1px solid var(--border-primary)",
+                        padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border-primary)",
                         fontSize: 12, cursor: "pointer",
                         background: selectedAccounts.includes(acc.id) ? "var(--bg-tertiary)" : "transparent",
                         color: "var(--text-secondary)",
                       }}>
                         <input type="checkbox" checked={selectedAccounts.includes(acc.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]);
-                            else setSelectedAccounts(selectedAccounts.filter((i) => i !== acc.id));
-                          }}
-                        />
+                          onChange={e => { if (e.target.checked) setSelectedAccounts([...selectedAccounts, acc.id]); else setSelectedAccounts(selectedAccounts.filter(i => i !== acc.id)); }} />
                         <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{acc.name || acc.id}</span>
                       </label>
                     ))}
@@ -375,7 +285,7 @@ export default function DomainHubPage() {
             {reconResults ? (
               <div className="fade-in">
                 <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-                  {["missing", "active", "extra"].map((tab) => (
+                  {["missing", "active", "extra"].map(tab => (
                     <button key={tab} onClick={() => setReconTab(tab)} style={{
                       padding: "5px 10px", fontSize: 12, border: "none", borderRadius: 6, cursor: "pointer",
                       background: reconTab === tab ? "var(--bg-tertiary)" : "transparent",
@@ -388,7 +298,6 @@ export default function DomainHubPage() {
                     </button>
                   ))}
                 </div>
-
                 <div className="card" style={{ maxHeight: 500, overflow: "auto" }}>
                   {reconTab === "missing" && renderTable(reconResults.missing || [])}
                   {reconTab === "active" && renderCampaignTable(reconResults.active || [])}
@@ -411,41 +320,32 @@ export default function DomainHubPage() {
                 <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Domain</label>
-                    <input value={searchDomain} onChange={(e) => setSearchDomain(e.target.value)} style={{ width: "100%", fontFamily: "'JetBrains Mono', monospace" }} />
+                    <input value={searchDomain} onChange={e => setSearchDomain(e.target.value)} style={{ width: "100%", fontFamily: "'JetBrains Mono', monospace" }} />
                   </div>
                 </div>
-
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>Ad Accounts</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {accounts.map((acc) => (
+                    {accounts.map(acc => (
                       <label key={acc.id} style={{
                         display: "flex", alignItems: "center", gap: 6,
-                        padding: "4px 10px", borderRadius: 6,
-                        border: "1px solid var(--border-primary)",
+                        padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border-primary)",
                         fontSize: 12, cursor: "pointer",
                         background: searchAccounts.includes(acc.id) ? "var(--bg-tertiary)" : "transparent",
                         color: "var(--text-secondary)",
                       }}>
                         <input type="checkbox" checked={searchAccounts.includes(acc.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) setSearchAccounts([...searchAccounts, acc.id]);
-                            else setSearchAccounts(searchAccounts.filter((i) => i !== acc.id));
-                          }}
-                        />
+                          onChange={e => { if (e.target.checked) setSearchAccounts([...searchAccounts, acc.id]); else setSearchAccounts(searchAccounts.filter(i => i !== acc.id)); }} />
                         <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{acc.name || acc.id}</span>
                       </label>
                     ))}
                   </div>
                 </div>
-
-                <button className="btn btn-primary" onClick={runSearch}
-                  disabled={searchLoading || !searchDomain || searchAccounts.length === 0}>
+                <button className="btn btn-primary" onClick={runSearch} disabled={searchLoading || !searchDomain || searchAccounts.length === 0}>
                   {searchLoading ? <><span className="spinner" /> Searching...</> : "Search"}
                 </button>
               </div>
             )}
-
             {searchResults && Array.isArray(searchResults) && searchResults.length > 0 && (
               <div className="card fade-in" style={{ maxHeight: 500, overflow: "auto" }}>{renderCampaignTable(searchResults)}</div>
             )}
@@ -470,11 +370,11 @@ function renderTable(rows) {
   return (
     <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
       <thead><tr style={{ borderBottom: "1px solid var(--border-primary)" }}>
-        {keys.map((k) => <th key={k} style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>{k}</th>)}
+        {keys.map(k => <th key={k} style={{ textAlign: "left", padding: "8px 12px", color: "var(--text-tertiary)", fontWeight: 500 }}>{k}</th>)}
       </tr></thead>
       <tbody>{rows.map((row, i) => (
         <tr key={i} style={{ borderBottom: "1px solid var(--border-secondary)" }}>
-          {keys.map((k) => <td key={k} style={{ padding: "8px 12px", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{row[k]}</td>)}
+          {keys.map(k => <td key={k} style={{ padding: "8px 12px", color: "var(--text-secondary)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{row[k]}</td>)}
         </tr>
       ))}</tbody>
     </table>

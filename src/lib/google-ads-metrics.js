@@ -53,11 +53,27 @@ async function gaqlQuery(customerId, query, accessToken) {
 }
 
 /**
- * Fetch 30-day daily metrics for given account IDs.
- * Returns an object: { [date]: { clicks, impressions, cost, ctr, cpc } }
+ * Helper to compute date strings
  */
-export async function fetch30DayMetrics(accountIds) {
-  if (!accountIds || accountIds.length === 0) return {};
+export function getDateRange(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days);
+  return {
+    startDate: start.toISOString().split("T")[0],
+    endDate: end.toISOString().split("T")[0],
+  };
+}
+
+/**
+ * Fetch daily metrics for given account IDs within a date range.
+ * @param {string[]} accountIds
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate - YYYY-MM-DD
+ * @returns {Array} sorted daily metrics
+ */
+export async function fetchMetrics(accountIds, startDate, endDate) {
+  if (!accountIds || accountIds.length === 0) return [];
 
   const accessToken = await getAccessToken();
 
@@ -70,7 +86,8 @@ export async function fetch30DayMetrics(accountIds) {
       metrics.ctr,
       metrics.average_cpc
     FROM campaign
-    WHERE segments.date DURING LAST_30_DAYS
+    WHERE segments.date >= '${startDate}'
+      AND segments.date <= '${endDate}'
       AND campaign.status = 'ENABLED'
   `;
 
@@ -104,12 +121,18 @@ export async function fetch30DayMetrics(accountIds) {
       date,
       clicks: m.clicks,
       impressions: m.impressions,
-      cost: m.costMicros / 1_000_000, // micros → dollars
+      cost: m.costMicros / 1_000_000,
       ctr: m.impressions > 0 ? m.clicks / m.impressions : 0,
       cpc: m.clicks > 0 ? m.costMicros / 1_000_000 / m.clicks : 0,
     }));
 
   return sorted;
+}
+
+// Backwards compat
+export async function fetch30DayMetrics(accountIds) {
+  const { startDate, endDate } = getDateRange(30);
+  return fetchMetrics(accountIds, startDate, endDate);
 }
 
 /**
@@ -121,7 +144,7 @@ export function extractSparklineData(dailyMetrics, metric = "clicks") {
       case "clicks": return d.clicks;
       case "impressions": return d.impressions;
       case "cost": return Math.round(d.cost * 100) / 100;
-      case "ctr": return Math.round(d.ctr * 10000) / 100; // percentage
+      case "ctr": return Math.round(d.ctr * 10000) / 100;
       case "cpc": return Math.round(d.cpc * 100) / 100;
       default: return d.clicks;
     }
