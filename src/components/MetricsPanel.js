@@ -64,6 +64,8 @@ export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRe
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [rangeCache, setRangeCache] = useState({});
+  const [fromLocalCache, setFromLocalCache] = useState(false);
 
   const totals = stats?.totals;
   const allSparklines = stats?.allSparklines;
@@ -71,17 +73,30 @@ export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRe
 
   const activeMetricDef = METRICS.find((m) => m.key === selectedMetric) || METRICS[0];
 
-  async function refreshWithDays(days) {
+  async function refreshWithDays(days, forceRefresh = false) {
     setActiveDays(days);
     setShowCustom(false);
+
+    // Check client-side cache first (unless force refresh)
+    const cacheKey = `days-${days}`;
+    if (!forceRefresh && rangeCache[cacheKey]) {
+      setFromLocalCache(true);
+      if (onRefresh) onRefresh();
+      return;
+    }
+
     setRefreshing(true);
+    setFromLocalCache(false);
     try {
       const res = await fetch(`/api/domains/${domainId}/stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ days }),
       });
-      if (res.ok && onRefresh) onRefresh();
+      if (res.ok) {
+        setRangeCache(prev => ({ ...prev, [cacheKey]: true }));
+        if (onRefresh) onRefresh();
+      }
     } catch { /* ignore */ }
     finally { setRefreshing(false); }
   }
@@ -89,14 +104,26 @@ export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRe
   async function refreshWithCustomRange() {
     if (!customStart || !customEnd) return;
     setShowCustom(false);
+
+    const cacheKey = `custom-${customStart}-${customEnd}`;
+    if (rangeCache[cacheKey]) {
+      setFromLocalCache(true);
+      if (onRefresh) onRefresh();
+      return;
+    }
+
     setRefreshing(true);
+    setFromLocalCache(false);
     try {
       const res = await fetch(`/api/domains/${domainId}/stats`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startDate: customStart, endDate: customEnd }),
       });
-      if (res.ok && onRefresh) onRefresh();
+      if (res.ok) {
+        setRangeCache(prev => ({ ...prev, [cacheKey]: true }));
+        if (onRefresh) onRefresh();
+      }
     } catch { /* ignore */ }
     finally { setRefreshing(false); }
   }
@@ -119,7 +146,7 @@ export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRe
               color: "var(--text-tertiary)", fontFamily: "'JetBrains Mono', monospace",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
-              Cached · {timeAgo(updatedAt)}
+              {fromLocalCache ? "Local" : "Cached"} · {timeAgo(updatedAt)}
             </span>
           )}
           {refreshing && <span className="spinner" style={{ width: 12, height: 12 }} />}
