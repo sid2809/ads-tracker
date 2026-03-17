@@ -58,6 +58,7 @@ export default function ReportsTab({ domainId, isAdmin }) {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
+  const [cachedReports, setCachedReports] = useState({});
 
   function applyPreset(days) {
     const d = getDefaultDates(days);
@@ -67,6 +68,11 @@ export default function ReportsTab({ domainId, isAdmin }) {
 
   async function runReport() {
     if (!startDate || !endDate) return;
+    const cacheKey = `${startDate}-${endDate}-${metric}-${limit}`;
+    if (cachedReports[cacheKey]) {
+      setReport(cachedReports[cacheKey]);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -81,6 +87,7 @@ export default function ReportsTab({ domainId, isAdmin }) {
         return;
       }
       setReport(data);
+      setCachedReports(prev => ({ ...prev, [cacheKey]: data }));
     } catch {
       setError("Network error");
     } finally {
@@ -142,9 +149,34 @@ export default function ReportsTab({ domainId, isAdmin }) {
               style={{ padding: "5px 14px", fontSize: 12 }}>
               {loading ? <><span className="spinner" /> Running...</> : "Run Report"}
             </button>
+            {report && (
+              <button className="btn btn-secondary" onClick={() => setReport(null)}
+                style={{ padding: "5px 14px", fontSize: 12, marginLeft: 8 }}>
+                Clear
+              </button>
+            )}
           </div>
 
           {error && <p style={{ color: "var(--status-red)", fontSize: 12 }}>{error}</p>}
+        </div>
+      )}
+
+      {/* Recent cached reports */}
+      {Object.keys(cachedReports).length > 0 && !report && (
+        <div style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>Recent reports this session:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {Object.entries(cachedReports).map(([key, data]) => (
+              <button
+                key={key}
+                onClick={() => setReport(data)}
+                className="btn btn-secondary"
+                style={{ padding: "4px 10px", fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {data.period.startDate} → {data.period.endDate} · {data.metric}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

@@ -184,6 +184,23 @@ export default function MetricsPanel({ stats, updatedAt, domainId, isAdmin, onRe
             >
               Custom
             </button>
+            <button
+              onClick={() => refreshWithDays(activeDays, true)}
+              disabled={refreshing}
+              title="Force refresh from Google Ads"
+              style={{
+                padding: "4px 6px", fontSize: 11, border: "1px solid var(--border-primary)",
+                borderRadius: 4, cursor: refreshing ? "default" : "pointer",
+                background: "transparent", color: "var(--text-tertiary)",
+                display: "inline-flex", alignItems: "center",
+                transition: "all 0.15s",
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            </button>
           </div>
         )}
       </div>
