@@ -27,14 +27,17 @@ export default function DomainSettingsPage() {
   const [sparklineMetric, setSparklineMetric] = useState("clicks");
   const [outputSheetUrl, setOutputSheetUrl] = useState("");
   const [outputWorksheetName, setOutputWorksheetName] = useState("");
+  const [columnMappings, setColumnMappings] = useState([]);
+  const [sourceColumns, setSourceColumns] = useState([]);
 
   useEffect(() => {
     Promise.all([
       fetch(`/api/domains/${id}`).then((r) => r.json()),
       fetch("/api/domains").then((r) => r.json()),
       fetch("/api/accounts").then((r) => r.json()),
+      fetch(`/api/domains/${id}/cache`).then(r => r.json()),
     ])
-      .then(([d, all, accs]) => {
+      .then(([d, all, accs, cache]) => {
         setDomain(d);
         setDomains(Array.isArray(all) ? all : []);
         setAccounts(Array.isArray(accs?.accounts) ? accs.accounts : Array.isArray(accs) ? accs : []);
@@ -57,6 +60,23 @@ export default function DomainSettingsPage() {
         if (outputSheet) {
           setOutputSheetUrl(outputSheet.sheet_url || "");
           setOutputWorksheetName(outputSheet.worksheet_name || "");
+        }
+
+        // Load column mapping
+        const savedMapping = d.settings?.output_column_map;
+        if (savedMapping) {
+          try {
+            const parsed = typeof savedMapping === "string" ? JSON.parse(savedMapping) : savedMapping;
+            setColumnMappings(Object.entries(parsed).map(([source, target]) => ({ source, target })));
+          } catch { /* ignore */ }
+        }
+
+        // Extract source columns from cached reconciliation data
+        const cacheData = cache?.data;
+        if (cacheData?.missing?.[0]) {
+          setSourceColumns(Object.keys(cacheData.missing[0]));
+        } else if (cacheData?.active?.[0]) {
+          setSourceColumns(Object.keys(cacheData.active[0]));
         }
       })
       .catch(() => {})
@@ -101,6 +121,19 @@ export default function DomainSettingsPage() {
             sheet_url: outputSheetUrl,
             worksheet_name: outputWorksheetName,
           }),
+        });
+      }
+
+      // Save column mapping
+      if (columnMappings.length > 0) {
+        const mapObj = {};
+        for (const m of columnMappings) {
+          if (m.source && m.target) mapObj[m.source] = m.target;
+        }
+        await fetch(`/api/domains/${id}/settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ output_column_map: JSON.stringify(mapObj) }),
         });
       }
 
@@ -255,9 +288,9 @@ export default function DomainSettingsPage() {
         <div className="card" style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)", marginBottom: 16 }}>Output Sheet</h2>
           <p style={{ color: "var(--text-tertiary)", fontSize: 12, marginBottom: 12 }}>
-            Missing URLs will be pushed to this sheet when you click "Push to Sheet" in the reconciliation tab.
+            Missing URLs will be pushed to this sheet. Map source columns to output columns below.
           </p>
-          <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gap: 12, marginBottom: 20 }}>
             <div>
               <label style={{ display: "block", fontSize: 12, color: "var(--text-tertiary)", marginBottom: 6 }}>Sheet URL</label>
               <input value={outputSheetUrl} onChange={(e) => setOutputSheetUrl(e.target.value)}
@@ -268,6 +301,84 @@ export default function DomainSettingsPage() {
               <input value={outputWorksheetName} onChange={(e) => setOutputWorksheetName(e.target.value)}
                 placeholder="Sheet1" style={{ width: "100%" }} />
             </div>
+          </div>
+
+          {/* Column Mapping */}
+          <div style={{ borderTop: "1px solid var(--border-primary)", paddingTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ fontSize: 12, fontWeight: 500, color: "var(--text-secondary)" }}>Column Mapping</h3>
+              <button className="btn btn-secondary" onClick={() => setColumnMappings([...columnMappings, { source: "", target: "" }])}
+                style={{ padding: "3px 8px", fontSize: 11 }}>
+                + Add Mapping
+              </button>
+            </div>
+
+            {sourceColumns.length > 0 && columnMappings.length === 0 && (
+              <p style={{ color: "var(--text-tertiary)", fontSize: 12, marginBottom: 12 }}>
+                Source columns available: {sourceColumns.map(c => (
+                  <span key={c} style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text-secondary)", marginRight: 8 }}>{c}</span>
+                ))}
+              </p>
+            )}
+
+            {columnMappings.length === 0 && (
+              <p style={{ color: "var(--text-tertiary)", fontSize: 11 }}>
+                No mappings configured — all source columns will be pushed as-is.
+              </p>
+            )}
+
+            {columnMappings.map((m, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                {sourceColumns.length > 0 ? (
+                  <select
+                    value={m.source}
+                    onChange={(e) => {
+                      const updated = [...columnMappings];
+                      updated[i] = { ...updated[i], source: e.target.value };
+                      setColumnMappings(updated);
+                    }}
+                    style={{ flex: 1, fontSize: 12, padding: "6px 8px" }}
+                  >
+                    <option value="">Select source column</option>
+                    {sourceColumns.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={m.source}
+                    onChange={(e) => {
+                      const updated = [...columnMappings];
+                      updated[i] = { ...updated[i], source: e.target.value };
+                      setColumnMappings(updated);
+                    }}
+                    placeholder="Source column name"
+                    style={{ flex: 1, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+                  />
+                )}
+
+                <span style={{ color: "var(--text-tertiary)", fontSize: 12 }}>→</span>
+
+                <input
+                  value={m.target}
+                  onChange={(e) => {
+                    const updated = [...columnMappings];
+                    updated[i] = { ...updated[i], target: e.target.value };
+                    setColumnMappings(updated);
+                  }}
+                  placeholder="Output column name"
+                  style={{ flex: 1, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+                />
+
+                <button onClick={() => setColumnMappings(columnMappings.filter((_, j) => j !== i))}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", padding: 4, display: "flex" }}
+                  title="Remove mapping">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 

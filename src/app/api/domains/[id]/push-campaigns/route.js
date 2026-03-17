@@ -48,13 +48,24 @@ export async function POST(request, { params }) {
     // Convert rows to 2D array for Sheets API
     // If column mapping exists, use it to order columns
     // Otherwise, use all keys from the first row
-    const keys = columnMap
-      ? Object.keys(columnMap)
-      : Object.keys(rows[0]);
+    let headerRow = null;
+    let sheetRows;
 
-    const sheetRows = rows.map((row) =>
-      keys.map((key) => row[key] || "")
-    );
+    if (columnMap && Object.keys(columnMap).length > 0) {
+      // Use mapping: source column → output column name
+      const sourceKeys = Object.keys(columnMap);
+      const outputHeaders = sourceKeys.map(k => columnMap[k]);
+      headerRow = outputHeaders;
+      sheetRows = rows.map(row => sourceKeys.map(k => row[k] || ""));
+    } else {
+      // No mapping — push all columns as-is
+      const keys = Object.keys(rows[0]);
+      headerRow = keys;
+      sheetRows = rows.map(row => keys.map(k => row[k] || ""));
+    }
+
+    // Prepend header row
+    sheetRows = [headerRow, ...sheetRows];
 
     // Append to sheet
     const result = await appendToSheet(
