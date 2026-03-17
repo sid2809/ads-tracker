@@ -54,6 +54,7 @@ export default function ReportsTab({ domainId, isAdmin }) {
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [metric, setMetric] = useState("clicks");
+  const [limit, setLimit] = useState(10);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
@@ -72,7 +73,7 @@ export default function ReportsTab({ domainId, isAdmin }) {
       const res = await fetch(`/api/domains/${domainId}/reports`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate, endDate, metric, limit: 15 }),
+        body: JSON.stringify({ startDate, endDate, metric, limit }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -130,6 +131,11 @@ export default function ReportsTab({ domainId, isAdmin }) {
                   <option key={m.key} value={m.key}>{m.label}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4 }}>Top N</label>
+              <input type="number" min={1} max={50} value={limit} onChange={(e) => setLimit(Math.max(1, Math.min(50, Number(e.target.value))))}
+                style={{ width: 60, fontSize: 12, padding: "4px 8px", fontFamily: "'JetBrains Mono', monospace" }} />
             </div>
             <button className="btn btn-primary" onClick={runReport}
               disabled={loading || !startDate || !endDate}
