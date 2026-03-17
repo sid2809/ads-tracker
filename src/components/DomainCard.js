@@ -15,6 +15,19 @@ function timeAgo(dateStr) {
   return `${days}d ago`;
 }
 
+function formatNum(n) {
+  if (n == null || isNaN(n)) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toLocaleString();
+}
+
+function formatMoney(n) {
+  if (n == null || isNaN(n)) return "—";
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
 const METRIC_LABELS = {
   clicks: "Clicks",
   impressions: "Impr",
@@ -27,6 +40,7 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const metric = stats?.sparkline?.metric || "clicks";
+  const totals = stats?.totals;
 
   async function handleRefresh(e) {
     e.stopPropagation();
@@ -112,7 +126,7 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
       </div>
 
       {/* Sparkline */}
-      <div style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 10 }}>
         <Sparkline
           data={stats?.sparkline?.data || []}
           metric={metric}
@@ -121,7 +135,33 @@ export default function DomainCard({ domain, stats, updatedAt, isAdmin, onRefres
         />
       </div>
 
-      {/* Stats row */}
+      {/* Metrics row */}
+      {totals && (
+        <div style={{
+          display: "flex",
+          gap: 10,
+          fontSize: 11,
+          fontFamily: "'JetBrains Mono', monospace",
+          marginBottom: 10,
+          paddingBottom: 10,
+          borderBottom: "1px solid var(--border-secondary)",
+        }}>
+          <span>
+            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{formatNum(totals.clicks)}</span>
+            <span style={{ color: "var(--text-tertiary)", marginLeft: 3 }}>clicks</span>
+          </span>
+          <span>
+            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{formatMoney(totals.avgCpc)}</span>
+            <span style={{ color: "var(--text-tertiary)", marginLeft: 3 }}>cpc</span>
+          </span>
+          <span>
+            <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{formatMoney(totals.cost)}</span>
+            <span style={{ color: "var(--text-tertiary)", marginLeft: 3 }}>cost</span>
+          </span>
+        </div>
+      )}
+
+      {/* Reconciliation stats row */}
       <div style={{ display: "flex", gap: 12, fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
         <span>
           <span style={{ color: "var(--status-green)", fontWeight: 500 }}>

@@ -5,4 +5,5 @@ export { default as AddDomainModal } from "./AddDomainModal";
 export { default as DeleteDomainModal } from "./DeleteDomainModal";
 export { default as Sparkline } from "./Sparkline";
 export { default as SaveCachePrompt } from "./SaveCachePrompt";
+export { default as MetricsPanel } from "./MetricsPanel";
 export { AuthProvider, useAuth } from "./AuthProvider";

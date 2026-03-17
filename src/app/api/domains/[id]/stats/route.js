@@ -64,27 +64,54 @@ export async function POST(request, { params }) {
     }
 
     // 4. Fetch 30-day metrics from Google Ads
+    let dailyMetrics = [];
     let sparklineData = [];
+    let totals = { clicks: 0, impressions: 0, cost: 0, avgCtr: 0, avgCpc: 0 };
+
     if (accountIds.length > 0) {
       try {
-        const dailyMetrics = await fetch30DayMetrics(accountIds);
+        dailyMetrics = await fetch30DayMetrics(accountIds);
         sparklineData = extractSparklineData(dailyMetrics, sparklineMetric);
+
+        // Compute totals
+        if (dailyMetrics.length > 0) {
+          totals.clicks = dailyMetrics.reduce((s, d) => s + d.clicks, 0);
+          totals.impressions = dailyMetrics.reduce((s, d) => s + d.impressions, 0);
+          totals.cost = Math.round(dailyMetrics.reduce((s, d) => s + d.cost, 0) * 100) / 100;
+          totals.avgCtr = totals.impressions > 0
+            ? Math.round((totals.clicks / totals.impressions) * 10000) / 100
+            : 0;
+          totals.avgCpc = totals.clicks > 0
+            ? Math.round((totals.cost / totals.clicks) * 100) / 100
+            : 0;
+        }
       } catch (err) {
         console.error("[stats refresh] metrics fetch error:", err.message);
-        // Continue with empty sparkline — don't fail the whole request
       }
     }
 
-    // 5. Build stats object
+    // 5. Build all sparkline series for the hub
+    const allSparklines = {
+      clicks: extractSparklineData(dailyMetrics, "clicks"),
+      impressions: extractSparklineData(dailyMetrics, "impressions"),
+      cost: extractSparklineData(dailyMetrics, "cost"),
+      ctr: extractSparklineData(dailyMetrics, "ctr"),
+      cpc: extractSparklineData(dailyMetrics, "cpc"),
+    };
+
+    // 6. Build stats object
     const statsData = {
       ...reconStats,
+      totals,
       sparkline: {
         metric: sparklineMetric,
         data: sparklineData,
       },
+      allSparklines,
+      dailyMetrics,
     };
 
-    // 6. Cache it
+    // 7. Cache it
     const { rows: saved } = await query(
       `INSERT INTO domain_cache (domain_id, cache_type, cache_data)
        VALUES ($1, 'stats', $2)
