@@ -5,6 +5,7 @@ import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
 import SaveCachePrompt from "@/components/SaveCachePrompt";
 import MetricsPanel from "@/components/MetricsPanel";
+import ReportsTab from "@/components/ReportsTab";
 
 function timeAgo(dateStr) {
   if (!dateStr) return null;
@@ -199,10 +200,12 @@ export default function DomainHubPage() {
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
-          <button disabled style={{
-            padding: "6px 14px", fontSize: 13, border: "none", borderRadius: 6,
-            background: "transparent", color: "var(--text-tertiary)", opacity: 0.5, cursor: "default",
-          }}>Reports <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.7 }}>Soon</span></button>
+          <button onClick={() => setActiveTab("reports")} style={{
+            padding: "6px 14px", fontSize: 13, border: "none", borderRadius: 6, cursor: "pointer",
+            background: activeTab === "reports" ? "var(--bg-tertiary)" : "transparent",
+            color: activeTab === "reports" ? "var(--text-primary)" : "var(--text-tertiary)",
+            fontWeight: activeTab === "reports" ? 500 : 400,
+          }}>Reports</button>
         </div>
 
         {/* ==================== RECONCILIATION TAB ==================== */}
@@ -358,6 +361,10 @@ export default function DomainHubPage() {
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === "reports" && (
+          <ReportsTab domainId={id} isAdmin={isAdmin} />
         )}
       </main>
     </div>
